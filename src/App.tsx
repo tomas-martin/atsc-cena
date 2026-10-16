@@ -58,7 +58,11 @@ function ClubLogo({
 }
 
 function App() {
-  if (window.location.pathname === '/admin') return <AdminPage />
+  const [showAdmin, setShowAdmin] = useState(
+    typeof window !== 'undefined' && window.location.pathname === '/admin'
+  )
+
+  if (showAdmin) return <AdminPage onBack={() => setShowAdmin(false)} />
 
   // ── Estados de la navegación por secciones ──
   const [currentStep, setCurrentStep] = useState<Step>('fiesta')
@@ -223,7 +227,7 @@ function App() {
       // Guardar en base de datos si Supabase está activo
       if (supabase) {
         try {
-          await supabase.from('orders').insert({
+          const { data: orderData, error: orderErr } = await supabase.from('orders').insert({
             buyer_full_name: buyer.fullName,
             buyer_dni: buyer.dni,
             buyer_email: buyer.email,
@@ -234,7 +238,17 @@ function App() {
             payment_method: paymentMethod,
             status: paymentMethod === 'transferencia' ? 'pendiente' : 'pagado',
             transfer_reference: transferRef || null,
-          })
+          }).select('id').single()
+
+          if (!orderErr && orderData?.id) {
+            const ticketRows = tickets.map(t => ({
+              order_id: orderData.id,
+              attendee_name: t.attendeeName,
+              qr_token: t.qrToken,
+              status: 'valid'
+            }))
+            await supabase.from('tickets').insert(ticketRows)
+          }
         } catch (dbErr) {
           console.warn('Registro en DB:', dbErr)
         }
@@ -856,7 +870,18 @@ function App() {
             <span>SPORT CLUB · MENDOZA</span>
           </div>
         </div>
-        <div>ORGULLO AZULGRANA DESDE 1932 <b>✳</b> SOMOS FAMILIA</div>
+        <div className="footer-right">
+          <div>ORGULLO AZULGRANA DESDE 1932 <b>✳</b> SOMOS FAMILIA</div>
+          <button 
+            className="footer-admin-btn"
+            onClick={() => {
+              setShowAdmin(true)
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }}
+          >
+            🔒 Panel Admin / Escáner QR
+          </button>
+        </div>
         <small>© 2026 Andes Talleres Sport Club. Sistema oficial de venta y emisión de entradas digitales con Resend.</small>
       </footer>
     </div>

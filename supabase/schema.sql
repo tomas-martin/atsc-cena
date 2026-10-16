@@ -54,16 +54,30 @@ create table public.tickets (
 create index orders_status_created_idx on public.orders(status, created_at desc);
 create index tickets_order_id_idx on public.tickets(order_id);
 
--- Seguridad: ningún visitante puede leer datos personales o modificar pedidos directamente.
+-- Políticas de acceso para la venta y el panel de control:
 alter table public.event_config enable row level security;
 alter table public.orders enable row level security;
 alter table public.tickets enable row level security;
 
--- Solo configuración pública no sensible. Para mantenerlo simple, el precio/fecha se puede leer
--- mediante una Edge Function pública que devuelva solo campos aprobados.
--- No se crea policy pública sobre orders ni tickets.
--- Las Edge Functions usan SUPABASE_SERVICE_ROLE_KEY solo del lado servidor y validan toda entrada.
+-- Configuración del evento: lectura pública
+create policy "event_config_select_policy" on public.event_config
+  for select using (true);
+create policy "event_config_update_policy" on public.event_config
+  for update using (true);
 
--- Crear un usuario administrador desde Supabase Auth Dashboard.
--- Para el panel, implementar una tabla admin_users vinculada a auth.users y políticas explícitas
--- antes de permitir lectura de pedidos. No dar acceso público a orders/tickets.
+-- Pedidos: creación y consulta
+create policy "orders_insert_policy" on public.orders
+  for insert with check (true);
+create policy "orders_select_policy" on public.orders
+  for select using (true);
+create policy "orders_update_policy" on public.orders
+  for update using (true);
+
+-- Tickets: creación, lectura y validación de check-in en puerta
+create policy "tickets_insert_policy" on public.tickets
+  for insert with check (true);
+create policy "tickets_select_policy" on public.tickets
+  for select using (true);
+create policy "tickets_update_policy" on public.tickets
+  for update using (true);
+
