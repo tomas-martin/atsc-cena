@@ -209,8 +209,21 @@ function App() {
         ? `ATSC-${savedOrderId.slice(0, 6).toUpperCase()}`
         : `ATSC-${Math.floor(100000 + Math.random() * 900000)}`
 
-      // 2. Generar tickets con UUIDs válidos para la base de datos
+      // 2. Determinar número de entrada correlativo para el sorteo
+      let nextTicketNumber = 1
+      if (supabase) {
+        try {
+          const { count } = await supabase.from('tickets').select('*', { count: 'exact', head: true })
+          if (typeof count === 'number' && !isNaN(count)) {
+            nextTicketNumber = count + 1
+          }
+        } catch {}
+      }
+
+      // Generar tickets con números limpios y correlativos (ej: 001, 002...)
       const tickets: IssuedTicket[] = Array.from({ length: quantity }, (_, i) => {
+        const currentNum = nextTicketNumber + i
+        const formattedNum = String(currentNum).padStart(3, '0')
         const uuidToken = (typeof crypto !== 'undefined' && crypto.randomUUID)
           ? crypto.randomUUID()
           : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -224,7 +237,7 @@ function App() {
           : (i === 0 ? buyer.fullName : `Acompañante ${i + 1}`)
 
         return {
-          ticketNumber: `ATSC-${String(i + 1).padStart(2, '0')}-${displayOrderId.replace('ATSC-', '')}`,
+          ticketNumber: formattedNum,
           attendeeName,
           qrToken: uuidToken,
           orderId: displayOrderId,
@@ -236,15 +249,18 @@ function App() {
 
       // 3. Guardar tickets en Supabase
       if (supabase && savedOrderId) {
-        const ticketRows = tickets.map(t => ({
+        const ticketRows = tickets.map((t, idx) => ({
           order_id: savedOrderId,
           attendee_name: t.attendeeName,
           qr_token: t.qrToken,
-          status: 'valid'
+          status: 'valid',
+          ticket_number: nextTicketNumber + idx,
         }))
         const { error: ticketErr } = await supabase.from('tickets').insert(ticketRows)
         if (ticketErr) {
-          console.warn('Registro de tickets en Supabase:', ticketErr)
+          // Si la columna ticket_number todavía no fue creada en Supabase, reintentar sin ella
+          const fallbackRows = ticketRows.map(({ ticket_number, ...rest }) => rest)
+          await supabase.from('tickets').insert(fallbackRows)
         }
       }
 

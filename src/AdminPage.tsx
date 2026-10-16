@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
 import QRCode from 'qrcode'
 import {
@@ -34,6 +34,7 @@ interface TicketRow {
   status: string // 'valid' | 'used' | 'cancelled'
   checked_in_at?: string
   created_at: string
+  ticket_number?: number | null
 }
 
 interface ScanResult {
@@ -76,10 +77,44 @@ export default function AdminPage({
   const [scannerActive, setScannerActive] = useState(false)
   const [scannerStarting, setScannerStarting] = useState(false)
   const [scanResult, setScanResult] = useState<ScanResult | null>(null)
+  const [scanCooldown, setScanCooldown] = useState(false)
   const [manualCode, setManualCode] = useState('')
   const [cameras, setCameras] = useState<Array<{ id: string; label: string }>>([])
   const [selectedCamera, setSelectedCamera] = useState<string>('')
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null)
+  const isProcessingRef = useRef(false)
+  const lastScannedTokenRef = useRef<string | null>(null)
+  const lastScannedTimeRef = useRef<number>(0)
+  const cooldownTimerRef = useRef<any>(null)
+
+  // Mapeo correlativo estable para sorteo (ej: 001, 002, 003...)
+  const ticketNumberMap = useMemo(() => {
+    const sorted = [...tickets].sort((a, b) => {
+      if (a.ticket_number && b.ticket_number) {
+        return a.ticket_number - b.ticket_number
+      }
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+    })
+
+    const map = new Map<string, string>()
+    sorted.forEach((t, index) => {
+      const num = t.ticket_number ? t.ticket_number : (index + 1)
+      map.set(t.id, String(num).padStart(3, '0'))
+    })
+    return map
+  }, [tickets])
+
+  function getTicketDisplayNumber(ticket: { id: string; ticket_number?: number | null }, fallbackIndex?: number): string {
+    if (ticket.ticket_number) {
+      return String(ticket.ticket_number).padStart(3, '0')
+    }
+    const mapped = ticketNumberMap.get(ticket.id)
+    if (mapped) return mapped
+    if (fallbackIndex !== undefined) {
+      return String(fallbackIndex + 1).padStart(3, '0')
+    }
+    return '001'
+  }
 
   // Verificar sesión activa de Supabase Auth al montar
   useEffect(() => {
@@ -244,8 +279,24 @@ export default function AdminPage({
           aspectRatio: 1.0,
         },
         async (decodedText) => {
-          // Al detectar un código
-          await processQrCode(decodedText)
+          const raw = decodedText.trim()
+          const now = Date.now()
+
+          // 1. Si ya se está procesando una consulta en vuelo, ignorar frames
+          if (isProcessingRef.current) return
+
+          // 2. Si es exactamente el MISMO código escaneado hace menos de 5 segundos, ignorar por completo
+          //    (evita que al sostener el celular frente a la cámara se re-escanee y marque "ya utilizada")
+          if (lastScannedTokenRef.current === raw && (now - lastScannedTimeRef.current < 5000)) {
+            return
+          }
+
+          // 3. Pausa mínima de 1.8 segundos entre lecturas de cualquier entrada para dar tiempo
+          if (lastScannedTimeRef.current > 0 && (now - lastScannedTimeRef.current < 1800)) {
+            return
+          }
+
+          await processQrCode(raw)
         },
         () => {
           // Error por frame no detectado (normal, ignorar)
@@ -263,6 +314,12 @@ export default function AdminPage({
   }
 
   async function stopScanner() {
+    if (cooldownTimerRef.current) {
+      clearTimeout(cooldownTimerRef.current)
+    }
+    setScanCooldown(false)
+    isProcessingRef.current = false
+
     if (html5QrCodeRef.current) {
       try {
         if (html5QrCodeRef.current.isScanning) {
@@ -280,99 +337,121 @@ export default function AdminPage({
 
   // Procesar y validar el código QR detectado
   async function processQrCode(rawText: string) {
-    let token = rawText.trim()
-    let attendeeFromQr = ''
-    let ticketNumFromQr = ''
+    if (isProcessingRef.current) return
+    isProcessingRef.current = true
+    setScanCooldown(true)
 
-    // Si el QR contiene un JSON estructurado
+    // Guardar timestamp y token del escaneo actual para evitar duplicados inmediatos
+    lastScannedTokenRef.current = rawText.trim()
+    lastScannedTimeRef.current = Date.now()
+
+    if (cooldownTimerRef.current) {
+      clearTimeout(cooldownTimerRef.current)
+    }
+
     try {
-      const parsed = JSON.parse(rawText)
-      if (parsed.token) token = parsed.token
-      if (parsed.attendee) attendeeFromQr = parsed.attendee
-      if (parsed.ticket) ticketNumFromQr = parsed.ticket
-    } catch {
-      // Es un token plano
-    }
+      let token = rawText.trim()
+      let attendeeFromQr = ''
+      let ticketNumFromQr = ''
 
-    // Buscar en la base de datos Supabase
-    let matchedTicket: TicketRow | null = null
-
-    if (supabase) {
+      // Si el QR contiene un JSON estructurado
       try {
-        const { data, error } = await supabase
-          .from('tickets')
-          .select('*')
-          .eq('qr_token', token)
-          .maybeSingle()
+        const parsed = JSON.parse(rawText)
+        if (parsed.token) token = parsed.token
+        if (parsed.attendee) attendeeFromQr = parsed.attendee
+        if (parsed.ticket) ticketNumFromQr = parsed.ticket
+      } catch {
+        // Es un token plano
+      }
 
-        if (!error && data) {
-          matchedTicket = data as TicketRow
+      // Buscar en la base de datos Supabase
+      let matchedTicket: TicketRow | null = null
+
+      if (supabase) {
+        try {
+          const { data, error } = await supabase
+            .from('tickets')
+            .select('*')
+            .eq('qr_token', token)
+            .maybeSingle()
+
+          if (!error && data) {
+            matchedTicket = data as TicketRow
+          }
+        } catch (err) {
+          console.warn('Error al buscar ticket en DB:', err)
         }
-      } catch (err) {
-        console.warn('Error al buscar ticket en DB:', err)
       }
-    }
 
-    // Si no está en Supabase, buscar en la lista local de tickets cargados
-    if (!matchedTicket) {
-      matchedTicket = tickets.find(t => t.qr_token === token || t.id === token) || null
-    }
+      // Si no está en Supabase, buscar en la lista local de tickets cargados
+      if (!matchedTicket) {
+        matchedTicket = tickets.find(t => t.qr_token === token || t.id === token) || null
+      }
 
-    // Si no se encontró el ticket
-    if (!matchedTicket) {
+      // Si no se encontró el ticket
+      if (!matchedTicket) {
+        setScanResult({
+          status: 'invalid',
+          message: 'Código no reconocido o no pertenece a este evento.',
+          attendeeName: attendeeFromQr || 'Desconocido',
+          ticketNumber: ticketNumFromQr || undefined,
+        })
+        playBeep(false)
+        return
+      }
+
+      const displayTicketNum = getTicketDisplayNumber(matchedTicket)
+
+      // Si ya fue utilizado
+      if (matchedTicket.status === 'used') {
+        const hora = matchedTicket.checked_in_at
+          ? new Date(matchedTicket.checked_in_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+          : 'Previamente'
+
+        setScanResult({
+          status: 'used',
+          message: `¡ATENCIÓN! Esta entrada ya ingresó al evento a las ${hora} hs.`,
+          attendeeName: matchedTicket.attendee_name,
+          ticketNumber: displayTicketNum,
+          checkedInAt: hora,
+        })
+        playBeep(false)
+        return
+      }
+
+      // ¡ENTRADA VÁLIDA! Realizar el check-in
+      const checkInTime = new Date().toISOString()
+
+      if (supabase) {
+        try {
+          await supabase
+            .from('tickets')
+            .update({ status: 'used', checked_in_at: checkInTime })
+            .eq('id', matchedTicket.id)
+        } catch (err) {
+          console.warn('Error al actualizar check-in en DB:', err)
+        }
+      }
+
+      // Actualizar estado local
+      setTickets(prev =>
+        prev.map(t => (t.id === matchedTicket!.id ? { ...t, status: 'used', checked_in_at: checkInTime } : t))
+      )
+
       setScanResult({
-        status: 'invalid',
-        message: 'Código no reconocido o no pertenece a este evento.',
-        attendeeName: attendeeFromQr || 'Desconocido',
-        ticketNumber: ticketNumFromQr || undefined,
-      })
-      playBeep(false)
-      return
-    }
-
-    // Si ya fue utilizado
-    if (matchedTicket.status === 'used') {
-      const hora = matchedTicket.checked_in_at
-        ? new Date(matchedTicket.checked_in_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
-        : 'Previamente'
-
-      setScanResult({
-        status: 'used',
-        message: `¡ATENCIÓN! Esta entrada ya ingresó al evento a las ${hora} hs.`,
+        status: 'valid',
+        message: '¡ACCESO PERMITIDO! Entrada verificada con éxito.',
         attendeeName: matchedTicket.attendee_name,
-        ticketNumber: matchedTicket.id.slice(0, 8),
-        checkedInAt: hora,
+        ticketNumber: displayTicketNum,
       })
-      playBeep(false)
-      return
+      playBeep(true)
+    } finally {
+      isProcessingRef.current = false
+      // Quitar estado de cooldown visual tras 2.2 segundos
+      cooldownTimerRef.current = setTimeout(() => {
+        setScanCooldown(false)
+      }, 2200)
     }
-
-    // ¡ENTRADA VÁLIDA! Realizar el check-in
-    const checkInTime = new Date().toISOString()
-
-    if (supabase) {
-      try {
-        await supabase
-          .from('tickets')
-          .update({ status: 'used', checked_in_at: checkInTime })
-          .eq('id', matchedTicket.id)
-      } catch (err) {
-        console.warn('Error al actualizar check-in en DB:', err)
-      }
-    }
-
-    // Actualizar estado local
-    setTickets(prev =>
-      prev.map(t => (t.id === matchedTicket!.id ? { ...t, status: 'used', checked_in_at: checkInTime } : t))
-    )
-
-    setScanResult({
-      status: 'valid',
-      message: '¡ACCESO PERMITIDO! Entrada verificada con éxito.',
-      attendeeName: matchedTicket.attendee_name,
-      ticketNumber: matchedTicket.id.slice(0, 8),
-    })
-    playBeep(true)
   }
 
   // Sonido de confirmación con Web Audio API (no requiere archivos externos)
@@ -473,7 +552,7 @@ export default function AdminPage({
 
       // 2. Mapear a IssuedTicket y generar códigos QR con QRCode
       const issuedTickets: IssuedTicket[] = orderTickets.map((t, i) => ({
-        ticketNumber: `ATSC-${String(i + 1).padStart(2, '0')}-${order.id.slice(-4)}`,
+        ticketNumber: getTicketDisplayNumber(t, i),
         attendeeName: t.attendee_name,
         qrToken: t.qr_token,
         orderId: order.id,
@@ -486,7 +565,7 @@ export default function AdminPage({
       for (const t of issuedTickets) {
         const qrContent = JSON.stringify({
           app: 'ATSC-CENA-2026',
-          ticket: t.ticketNumber,
+          ticket: `N° ${t.ticketNumber}`,
           attendee: t.attendeeName,
           token: t.qrToken,
           order: t.orderId
@@ -590,7 +669,7 @@ export default function AdminPage({
       }
 
       const issuedTickets: IssuedTicket[] = orderTickets.map((t, i) => ({
-        ticketNumber: `ATSC-${String(i + 1).padStart(2, '0')}-${order.id.slice(-4)}`,
+        ticketNumber: getTicketDisplayNumber(t, i),
         attendeeName: t.attendee_name,
         qrToken: t.qr_token,
         orderId: order.id,
@@ -603,7 +682,7 @@ export default function AdminPage({
       for (const t of issuedTickets) {
         const qrContent = JSON.stringify({
           app: 'ATSC-CENA-2026',
-          ticket: t.ticketNumber,
+          ticket: `N° ${t.ticketNumber}`,
           attendee: t.attendeeName,
           token: t.qrToken,
           order: t.orderId,
@@ -733,20 +812,30 @@ export default function AdminPage({
   const totalRevenue = orders.filter(o => o.status === 'pagado').reduce((sum, o) => sum + o.total_ars, 0)
   const pendingOrders = orders.filter(o => o.status === 'pendiente').length
 
-  // Filtrado de tickets
-  const filteredTickets = tickets.filter(t => {
-    const q = searchQuery.toLowerCase()
-    const matchesSearch =
-      !q ||
-      t.attendee_name.toLowerCase().includes(q) ||
-      t.qr_token.toLowerCase().includes(q) ||
-      t.id.toLowerCase().includes(q)
+  // Filtrado de tickets (ordenados de forma correlativa para sorteo)
+  const filteredTickets = [...tickets]
+    .sort((a, b) => {
+      const numA = parseInt(getTicketDisplayNumber(a), 10) || 0
+      const numB = parseInt(getTicketDisplayNumber(b), 10) || 0
+      return numA - numB
+    })
+    .filter(t => {
+      const q = searchQuery.toLowerCase().trim()
+      const ticketNum = getTicketDisplayNumber(t)
+      const matchesSearch =
+        !q ||
+        t.attendee_name?.toLowerCase().includes(q) ||
+        t.qr_token?.toLowerCase().includes(q) ||
+        t.id?.toLowerCase().includes(q) ||
+        ticketNum.includes(q) ||
+        `n° ${ticketNum}`.toLowerCase().includes(q) ||
+        `#${ticketNum}`.toLowerCase().includes(q)
 
-    if (!matchesSearch) return false
-    if (filterStatus === 'used') return t.status === 'used'
-    if (filterStatus === 'valid') return t.status === 'valid'
-    return true
-  })
+      if (!matchesSearch) return false
+      if (filterStatus === 'used') return t.status === 'used'
+      if (filterStatus === 'valid') return t.status === 'valid'
+      return true
+    })
 
   // Filtrado de pedidos
   const filteredOrders = orders.filter(o => {
@@ -887,18 +976,27 @@ export default function AdminPage({
 
                 {scannerActive && (
                   <div className="scanner-overlay">
-                    <div className="scanner-badge-live">
-                      <span className="pulse-dot"></span>
-                      EN VIVO · ESCANEANDO
-                    </div>
-                    <div className="scanner-reticle">
+                    {scanCooldown ? (
+                      <div className="scanner-badge-cooldown">
+                        <span className="cooldown-dot"></span>
+                        PROCESANDO / PAUSA BREVE
+                      </div>
+                    ) : (
+                      <div className="scanner-badge-live">
+                        <span className="pulse-dot"></span>
+                        EN VIVO · ESCANEANDO
+                      </div>
+                    )}
+                    <div className={`scanner-reticle ${scanCooldown ? 'reticle-paused' : ''}`}>
                       <span className="scanner-corner corner-tl"></span>
                       <span className="scanner-corner corner-tr"></span>
                       <span className="scanner-corner corner-bl"></span>
                       <span className="scanner-corner corner-br"></span>
-                      <span className="scanner-laser"></span>
+                      {!scanCooldown && <span className="scanner-laser"></span>}
                     </div>
-                    <p className="scanner-guide-text">Centrá el código QR dentro del marco</p>
+                    <p className="scanner-guide-text">
+                      {scanCooldown ? 'Entrada procesada · Listo en instantes...' : 'Centrá el código QR dentro del marco'}
+                    </p>
                   </div>
                 )}
 
@@ -947,8 +1045,24 @@ export default function AdminPage({
                     <h3>{scanResult.attendeeName || 'Asistente'}</h3>
                     <p>{scanResult.message}</p>
                     {scanResult.ticketNumber && (
-                      <small className="result-ticket-num">Entrada #{scanResult.ticketNumber}</small>
+                      <div className="result-ticket-badge">
+                        🎟️ Entrada N° {scanResult.ticketNumber.replace(/^N°\s*/i, '')}
+                      </div>
                     )}
+                    <div className="result-actions-row">
+                      <button
+                        type="button"
+                        className="btn-next-scan"
+                        onClick={() => {
+                          setScanResult(null)
+                          lastScannedTokenRef.current = null
+                          lastScannedTimeRef.current = 0
+                          setScanCooldown(false)
+                        }}
+                      >
+                        Siguiente escaneo
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1021,7 +1135,7 @@ export default function AdminPage({
             <table className="admin-table">
               <thead>
                 <tr>
-                  <th># Ticket</th>
+                  <th>N° Entrada (Sorteo)</th>
                   <th>Nombre del Asistente</th>
                   <th>Token QR</th>
                   <th>Estado</th>
@@ -1032,7 +1146,11 @@ export default function AdminPage({
               <tbody>
                 {filteredTickets.map(ticket => (
                   <tr key={ticket.id}>
-                    <td><code>#{ticket.id.slice(0, 8)}</code></td>
+                    <td>
+                      <span className="ticket-badge-number">
+                        N° {getTicketDisplayNumber(ticket)}
+                      </span>
+                    </td>
                     <td><strong>{ticket.attendee_name}</strong></td>
                     <td><small className="token-cell">{ticket.qr_token.slice(0, 16)}...</small></td>
                     <td>

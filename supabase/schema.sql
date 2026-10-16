@@ -43,6 +43,7 @@ create table public.orders (
 
 create table public.tickets (
   id uuid primary key default gen_random_uuid(),
+  ticket_number serial, -- Número correlativo normal para sorteo (1, 2, 3...)
   order_id uuid not null references public.orders(id) on delete restrict,
   attendee_name text,
   qr_token uuid not null unique default gen_random_uuid(),
@@ -53,6 +54,10 @@ create table public.tickets (
 
 create index orders_status_created_idx on public.orders(status, created_at desc);
 create index tickets_order_id_idx on public.tickets(order_id);
+create index tickets_ticket_number_idx on public.tickets(ticket_number);
+
+-- NOTA: Si ya tenías la tabla tickets creada en Supabase, ejecutá esta línea en el SQL Editor:
+-- alter table public.tickets add column if not exists ticket_number serial;
 
 -- Políticas de acceso para la venta y el panel de control:
 alter table public.event_config enable row level security;

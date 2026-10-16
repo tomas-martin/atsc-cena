@@ -494,6 +494,33 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
+.scanner-badge-cooldown {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  background: rgba(14, 23, 42, 0.92);
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 12px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  letter-spacing: 0.6px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.scanner-badge-cooldown .cooldown-dot {
+  width: 8px;
+  height: 8px;
+  background: #fbbf24;
+  border-radius: 50%;
+  box-shadow: 0 0 8px #fbbf24;
+}
+
 .scanner-badge-live .pulse-dot {
   width: 8px;
   height: 8px;
@@ -515,6 +542,11 @@
   height: 220px;
   border-radius: 14px;
   box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+  transition: opacity 0.3s;
+}
+
+.scanner-reticle.reticle-paused {
+  opacity: 0.45;
 }
 
 /* 4 esquinas del visor estilo visor HUD */
@@ -733,6 +765,58 @@
   font-size: 11px;
   color: #8496ad;
   margin-top: 4px;
+}
+
+.result-ticket-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(239, 46, 62, 0.15);
+  border: 1px solid rgba(239, 46, 62, 0.4);
+  color: #ff6b77;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 4px 10px;
+  border-radius: 6px;
+  margin-top: 6px;
+  width: fit-content;
+  letter-spacing: 0.5px;
+}
+
+.ticket-badge-number {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(239, 46, 62, 0.12);
+  border: 1px solid rgba(239, 46, 62, 0.35);
+  color: #ff5c6a;
+  font-family: 'Outfit', -apple-system, monospace;
+  font-weight: 800;
+  font-size: 13px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.result-actions-row {
+  margin-top: 10px;
+}
+
+.btn-next-scan {
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-next-scan:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.5);
+  transform: translateY(-1px);
 }
 
 /* Check-in manual */
