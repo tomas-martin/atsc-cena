@@ -1426,3 +1426,249 @@ button {
     min-width: 100%;
   }
 }
+
+/* ══════════════════════════════════════════════════════════
+   ESTILOS EXCLUSIVOS TRANSFERENCIA POR ALIAS Y WHATSAPP
+   ══════════════════════════════════════════════════════════ */
+.alias-main-card {
+  border-color: rgba(217, 39, 54, 0.4);
+  background: linear-gradient(135deg, #0a1524, #0d1e33);
+}
+
+.alias-badge-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.alias-pill {
+  background: rgba(217, 39, 54, 0.15);
+  color: #ff6874;
+  border: 1px solid rgba(217, 39, 54, 0.4);
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.alias-only-note {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.alias-box-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.alias-highlight-box {
+  background: rgba(6, 13, 23, 0.85);
+  border: 2px dashed rgba(217, 39, 54, 0.5);
+  border-radius: 8px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.alias-info-col small {
+  display: block;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--text-muted);
+  letter-spacing: 1px;
+}
+
+.alias-code {
+  font-family: 'Oswald', sans-serif;
+  font-size: 24px;
+  letter-spacing: 1px;
+  color: #ffffff;
+}
+
+.btn-copy-alias {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #d92736;
+  color: #ffffff;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px var(--red-glow);
+}
+
+.btn-copy-alias:hover {
+  background: #ef2e3e;
+}
+
+.btn-copy-alias.copied {
+  background: #10b981;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+}
+
+.alias-details-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.text-red-huge {
+  color: var(--red-talleres);
+  font-family: 'Oswald', sans-serif;
+  font-size: 24px;
+}
+
+/* Pantalla de confirmación pendiente */
+.pending-confirmation-banner {
+  text-align: center;
+  padding: 10px 0 24px;
+}
+
+.pending-icon-wrap {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 16px;
+  box-shadow: 0 0 25px rgba(245, 158, 11, 0.25);
+}
+
+.status-badge-pending {
+  display: inline-block;
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  margin-bottom: 14px;
+}
+
+.pending-confirmation-banner h1 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 34px;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.pending-confirmation-banner p {
+  color: var(--text-muted);
+  font-size: 15px;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* Tarjeta de WhatsApp */
+.whatsapp-cta-card {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(10, 21, 36, 0.9));
+  border: 2px solid rgba(16, 185, 129, 0.4);
+  border-radius: 10px;
+  padding: 26px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+.wa-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.wa-icon-circle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #25d366;
+  color: #ffffff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(37, 211, 102, 0.4);
+}
+
+.wa-card-header h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.wa-card-header p {
+  font-size: 13px;
+  color: #c2cad7;
+  line-height: 1.5;
+}
+
+.btn-whatsapp-huge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: #25d366;
+  color: #ffffff;
+  padding: 18px 28px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  text-decoration: none;
+  box-shadow: 0 6px 25px rgba(37, 211, 102, 0.45);
+  transition: all 0.25s;
+}
+
+.btn-whatsapp-huge:hover {
+  background: #20ba5a;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(37, 211, 102, 0.6);
+  color: #ffffff;
+}
+
+.resend-info-note {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  padding: 14px 18px;
+  font-size: 12px;
+  color: #9cb0c6;
+  line-height: 1.6;
+}
+
+.copy-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-mini-copy {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: none;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.btn-mini-copy:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+

@@ -1,11 +1,14 @@
 import { useEffect, useState, useRef } from 'react'
 import { Html5Qrcode } from 'html5-qrcode'
+import QRCode from 'qrcode'
 import {
   LockKeyhole, LogOut, RefreshCw,
   Camera, CheckCircle2, XCircle, AlertTriangle, Users,
-  Ticket, ArrowLeft, Search, Check
+  Ticket, ArrowLeft, Search, Check, Send
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
+import { sendTicketsEmail } from './lib/email'
+import type { OrderConfirmation, IssuedTicket } from './types'
 import './admin.css'
 
 interface OrderRow {
@@ -62,6 +65,8 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
   const [tickets, setTickets] = useState<TicketRow[]>([])
   const [searchQuery, setSearchQuery] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [approvingOrderId, setApprovingOrderId] = useState<string | null>(null)
+  const [actionFeedback, setActionFeedback] = useState<{ message: string; success: boolean } | null>(null)
 
   // Escáner QR
   const [scannerActive, setScannerActive] = useState(false)
@@ -383,17 +388,141 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
     )
   }
 
-  // Marcar pedido como pagado (ej. transferencia recibida)
-  async function handleMarkOrderPaid(orderId: string) {
-    if (supabase) {
-      await supabase
-        .from('orders')
-        .update({ status: 'pagado', paid_at: new Date().toISOString() })
-        .eq('id', orderId)
+  // Confirmar pago y enviar entradas con códigos QR por Resend
+  async function handleConfirmAndSendQr(order: OrderRow) {
+    setApprovingOrderId(order.id)
+    setActionFeedback(null)
+
+    try {
+      // 1. Obtener los tickets asociados a este pedido o generarlos si faltan
+      let orderTickets: TicketRow[] = []
+      if (supabase) {
+        const { data: existing } = await supabase
+          .from('tickets')
+          .select('*')
+          .eq('order_id', order.id)
+        if (existing && existing.length > 0) {
+          orderTickets = existing as TicketRow[]
+        }
+      }
+
+      // Si no estaban creados los tickets para este pedido, generarlos ahora
+      if (orderTickets.length === 0) {
+        const newTicketRows = Array.from({ length: order.quantity }, (_, i) => ({
+          order_id: order.id,
+          attendee_name: i === 0 ? order.buyer_full_name : `${order.buyer_full_name} (Acompañante ${i + 1})`,
+          qr_token: crypto.randomUUID ? crypto.randomUUID() : `atsc-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
+          status: 'valid'
+        }))
+
+        if (supabase) {
+          const { data: inserted } = await supabase
+            .from('tickets')
+            .insert(newTicketRows)
+            .select('*')
+          if (inserted) {
+            orderTickets = inserted as TicketRow[]
+          }
+        } else {
+          orderTickets = newTicketRows.map((t, idx) => ({ ...t, id: `tick_${idx}`, created_at: new Date().toISOString() }))
+        }
+      }
+
+      // 2. Mapear a IssuedTicket y generar códigos QR con QRCode
+      const issuedTickets: IssuedTicket[] = orderTickets.map((t, i) => ({
+        ticketNumber: `ATSC-${String(i + 1).padStart(2, '0')}-${order.id.slice(-4)}`,
+        attendeeName: t.attendee_name,
+        qrToken: t.qr_token,
+        orderId: order.id,
+        eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
+        date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
+        venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
+      }))
+
+      const generatedQrs: Record<string, string> = {}
+      for (const t of issuedTickets) {
+        const qrContent = JSON.stringify({
+          app: 'ATSC-CENA-2026',
+          ticket: t.ticketNumber,
+          attendee: t.attendeeName,
+          token: t.qrToken,
+          order: t.orderId
+        })
+        const dataUrl = await QRCode.toDataURL(qrContent, {
+          width: 320,
+          margin: 2,
+          color: {
+            dark: '#070e1a',
+            light: '#ffffff',
+          },
+        })
+        generatedQrs[t.qrToken] = dataUrl
+      }
+
+      // 3. Enviar email a través de Nodemailer SMTP (si falla el correo, no rompe la compra)
+      const conf: OrderConfirmation = {
+        orderId: order.id,
+        buyer: {
+          fullName: order.buyer_full_name,
+          dni: order.buyer_dni,
+          email: order.buyer_email,
+          phone: order.buyer_phone,
+        },
+        quantity: order.quantity,
+        totalArs: order.total_ars,
+        paymentMethod: 'transferencia',
+        tickets: issuedTickets,
+        emailSent: false,
+      }
+
+      let emailResult = { success: false, message: '' }
+      try {
+        emailResult = await sendTicketsEmail(conf, generatedQrs)
+      } catch (emailErr: any) {
+        // Loguear error sin credenciales
+        const safeError = emailErr?.message || 'Error de comunicación con el servicio de correo'
+        console.error('[SMTP Approval Error]:', safeError)
+        emailResult = { success: false, message: safeError }
+      }
+
+      // 4. Actualizar pedido a 'pagado' en Supabase independientemente del resultado del mail
+      if (supabase) {
+        await supabase
+          .from('orders')
+          .update({ status: 'pagado', paid_at: new Date().toISOString() })
+          .eq('id', order.id)
+      }
+
+      // 5. Actualizar estados locales
+      setOrders(prev =>
+        prev.map(o => (o.id === order.id ? { ...o, status: 'pagado' } : o))
+      )
+      setTickets(prev => {
+        const otherTickets = prev.filter(t => t.order_id !== order.id)
+        return [...otherTickets, ...orderTickets]
+      })
+
+      if (emailResult.success) {
+        setActionFeedback({
+          message: `¡Pago confirmado con éxito! Se despachó el email con ${issuedTickets.length} código(s) QR a ${order.buyer_email}.`,
+          success: true,
+        })
+      } else {
+        setActionFeedback({
+          message: `¡Pago confirmado en el sistema! Nota sobre el correo: ${emailResult.message || 'No se pudo despachar el email. Verificá las credenciales SMTP en Vercel.'}`,
+          success: true,
+        })
+      }
+
+    } catch (err) {
+      console.error('Error al confirmar pedido:', err)
+      setActionFeedback({
+        message: err instanceof Error ? err.message : 'Error al procesar la confirmación.',
+        success: false,
+      })
+    } finally {
+      setApprovingOrderId(null)
     }
-    setOrders(prev =>
-      prev.map(o => (o.id === orderId ? { ...o, status: 'pagado' } : o))
-    )
   }
 
   const money = (n: number) =>
@@ -849,6 +978,14 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
             </div>
           </div>
 
+          {actionFeedback && (
+            <div className={`admin-action-feedback ${actionFeedback.success ? 'feedback-success' : 'feedback-error'} animate-fade`}>
+              {actionFeedback.success ? <CheckCircle2 size={18} /> : <XCircle size={18} />}
+              <span>{actionFeedback.message}</span>
+              <button type="button" onClick={() => setActionFeedback(null)}>×</button>
+            </div>
+          )}
+
           <div className="table-scroll-wrap">
             <table className="admin-table">
               <thead>
@@ -859,14 +996,14 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
                   <th>Contacto</th>
                   <th>Entradas</th>
                   <th>Total</th>
-                  <th>Medio</th>
+                  <th>Referencia</th>
                   <th>Estado</th>
                   <th>Acción</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredOrders.map(order => (
-                  <tr key={order.id}>
+                  <tr key={order.id} className={order.status === 'pendiente' ? 'row-pending' : ''}>
                     <td>{new Date(order.created_at).toLocaleDateString('es-AR')}</td>
                     <td><strong>{order.buyer_full_name}</strong></td>
                     <td>{order.buyer_dni}</td>
@@ -876,20 +1013,35 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
                     </td>
                     <td><b>{order.quantity}</b></td>
                     <td><strong>{money(order.total_ars)}</strong></td>
-                    <td><span className="pay-method-badge">{order.payment_method}</span></td>
+                    <td>
+                      <small className="ref-cell">{order.transfer_reference || 'Por WhatsApp'}</small>
+                    </td>
                     <td>
                       <span className={`badge-status badge-${order.status}`}>
-                        {order.status.toUpperCase()}
+                        {order.status === 'pagado' ? 'PAGADO' : 'PENDIENTE'}
                       </span>
                     </td>
                     <td>
-                      {order.status === 'pendiente' && (
+                      {order.status === 'pendiente' ? (
                         <button
-                          className="btn-action-paid"
-                          onClick={() => void handleMarkOrderPaid(order.id)}
+                          className="btn-action-approve"
+                          onClick={() => void handleConfirmAndSendQr(order)}
+                          disabled={approvingOrderId === order.id}
                         >
-                          <Check size={14} /> Confirmar Pago
+                          {approvingOrderId === order.id ? (
+                            <>
+                              <RefreshCw size={13} className="spinner" /> Enviando QR...
+                            </>
+                          ) : (
+                            <>
+                              <Send size={13} /> Aprobar y Enviar QR
+                            </>
+                          )}
                         </button>
+                      ) : (
+                        <span className="badge-confirmed">
+                          <Check size={13} /> QR Despachado
+                        </span>
                       )}
                     </td>
                   </tr>

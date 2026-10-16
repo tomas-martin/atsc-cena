@@ -1,82 +1,90 @@
-# ATSC Cena 2026
+# ATSC Cena 2026 - Andes Talleres Sport Club
 
-Frontend para la venta de entradas de la Cena de Fin de Año de Andes Talleres Sport Club. Stack: Vite, React, TypeScript, Supabase, Edge Functions y Vercel.
+Sistema de venta y control de entradas para la **Cena de Fin de Año 2026 de Andes Talleres Sport Club**.
 
-## Estado inicial
+Stack: **React 19**, **Vite**, **TypeScript**, **Supabase**, **Nodemailer (SMTP Gmail)** y **Vercel Serverless Functions**.
 
-- Landing responsive azul marino/rojo.
-- Selector de cantidad (1–10), datos del comprador y métodos de pago.
-- Panel inicial en `/admin` con login Supabase Auth, resumen y tabla de pedidos (requiere políticas RLS administrativas).\n- SQL inicial para configuración del evento, pedidos y entradas.
-- Edge Function para crear pedidos y preferencia de Mercado Pago.
-- Webhook que consulta el pago directamente a Mercado Pago antes de actualizar estado.
-- Naranja X está señalado como proveedor pendiente de integración real.
-- Venta deshabilitada por defecto y precio sin definir.
+---
 
-**No usar en producción todavía sin completar la lista de seguridad de abajo.** El código es una base inicial y debe probarse con credenciales sandbox.
+## 🚀 Flujo del Sistema
 
-## Requisitos
+1. **Venta y Reserva por Transferencia Bancaria (Paso a paso):**
+   - El comprador elige la cantidad de entradas (1 a 10) e ingresa sus datos (Nombre, DNI, Celular y Email).
+   - Realiza la transferencia al **Alias oficial del Club** (`VITE_CLUB_ALIAS`).
+   - Al registrar el pedido, se genera la orden en estado `pendiente`.
+   - Se muestra la pantalla de confirmación con un botón directo a **WhatsApp** con el mensaje prearmado para enviar el comprobante de pago.
 
-Node.js LTS y npm. Para funciones backend, instalar Supabase CLI y Docker si se desea desarrollo local.
+2. **Validación y Envío en el Panel de Administrador (`/admin`):**
+   - El administrador ingresa con PIN rápido (`2026`) o credenciales Supabase.
+   - En la pestaña **Órdenes**, revisa las compras en estado `pendiente`.
+   - Al hacer clic en **"Aprobar y Enviar QR"**, el sistema:
+     - Asigna los tokens únicos de cada entrada.
+     - Genera los códigos QR.
+     - Despacha automáticamente el correo electrónico con las entradas y sus códigos QR embebidos mediante **SMTP con Nodemailer**.
+     - Actualiza la orden a estado `pagado`.
+     - *Si el correo fallase (por credenciales o conexión), la orden queda aprobada en el sistema sin interrumpir la operación y se registra el error de forma segura.*
 
-## Ejecutar frontend
+3. **Control de Ingreso en Puerta (Escáner QR):**
+   - El panel incluye un escáner que utiliza la cámara del celular.
+   - Valida el código QR en tiempo real, emite sonido de confirmación/error y marca la entrada como utilizada (`used`) registrando la hora exacta de ingreso.
+
+---
+
+## 🛠️ Variables de Entorno
+
+### Variables Frontend (Públicas, prefijo `VITE_`):
+- `VITE_SUPABASE_URL`: URL del proyecto de Supabase.
+- `VITE_SUPABASE_ANON_KEY`: Clave pública anon de Supabase.
+- `VITE_CLUB_ALIAS`: Alias bancario oficial (ej: `ANDES.TALLERES.FUTSAL`).
+- `VITE_WHATSAPP_PHONE`: Número de WhatsApp con código de país y área sin guiones (ej: `5492610000000`).
+- `VITE_CLUB_LOGO_URL`: (Opcional) URL pública del logo alojado en Supabase Storage.
+
+### Variables Backend SMTP (Secretas para Vercel Serverless Functions y `.env.local`):
+- `SMTP_HOST`: Host del servidor SMTP (por defecto `smtp.gmail.com`).
+- `SMTP_PORT`: Puerto del servidor SMTP (por defecto `465`).
+- `SMTP_SECURE`: `true` para puerto 465 (SSL) o `false` para 587 (STARTTLS).
+- `SMTP_USER`: Correo de Gmail emisor (ej: `tu-club@gmail.com`).
+- `SMTP_PASS`: **Contraseña de aplicación de Google** de 16 caracteres (creada en [Seguridad de Google](https://myaccount.google.com/apppasswords)).
+- `MAIL_FROM`: (Opcional) Nombre y correo visible del remitente (ej: `Andes Talleres <tu-club@gmail.com>`).
+
+---
+
+## 🔑 Cómo generar la Contraseña de Aplicación en Gmail
+
+1. Ingresá a tu cuenta de Google en: [myaccount.google.com/security](https://myaccount.google.com/security).
+2. Asegurate de tener activada la **Verificación en 2 pasos**.
+3. Buscá o ingresá en: [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords).
+4. Asigná un nombre a la aplicación (ej: `ATSC Entradas`).
+5. Copiá la contraseña generada de 16 caracteres y cargala en la variable `SMTP_PASS` en Vercel y `.env.local` (sin espacios).
+
+---
+
+## 💻 Desarrollo Local
 
 ```bash
+# Instalar dependencias
 npm install
-cp .env.example .env.local
+
+# Iniciar servidor de desarrollo (con soporte local de /api/send-email vía Nodemailer)
 npm run dev
 ```
 
-En Windows PowerShell, copiar el ejemplo:
-```powershell
-Copy-Item .env.example .env.local
-```
+---
 
-Completar `.env.local` con:
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY` (clave pública/publishable/anon, nunca service_role)
+## 🚢 Despliegue en Vercel
 
-## Configurar Supabase
-
-1. Crear un proyecto en Supabase.
-2. Abrir SQL Editor y ejecutar `supabase/schema.sql`.
-3. Mantener `sales_enabled = false` hasta que el club confirme precio, fecha, cupo y responsable de los cobros.
-4. Configurar los secretos de Edge Functions:
-```bash
-supabase secrets set MERCADOPAGO_ACCESS_TOKEN=TEST-... SITE_URL=https://tu-dominio.vercel.app ALLOWED_ORIGIN=https://tu-dominio.vercel.app
-```
-5. Desplegar funciones (desde la raíz, con Supabase CLI vinculado al proyecto):
-```bash
-supabase functions deploy create-checkout
-supabase functions deploy mercadopago-webhook
-```
-6. Para producción, configurar un webhook de Mercado Pago y comprobar que llega a:
-`https://TU-PROYECTO.supabase.co/functions/v1/mercadopago-webhook`
-7. Usar credenciales de prueba primero. No compartir ni subir secretos a GitHub.
-
-## Desplegar en Vercel
-
-1. Subir el repositorio a GitHub.
-2. En Vercel, importar el repo.
-3. Framework preset: Vite; build command `npm run build`; output directory `dist`.
-4. Añadir variables `VITE_SUPABASE_URL` y `VITE_SUPABASE_ANON_KEY` en Project Settings → Environment Variables.
-5. Deploy. Configurar `SITE_URL` y `ALLOWED_ORIGIN` con el dominio final en los secretos de Supabase.
-
-## Importante antes de vender de verdad
-
-- [ ] Confirmar fecha, lugar, precio, cupo, política de devoluciones y contacto del club.
-- [ ] Definir cuenta de cobro oficial del club y quién administrará los pagos.
-- [ ] Configurar precio/cupo en base de datos desde un canal administrativo protegido.
-- [ ] Implementar transacción SQL atómica para reservar cupo y evitar sobreventa bajo compras simultáneas.
-- [ ] Añadir validación de firma del webhook según la documentación vigente de Mercado Pago; el ejemplo consulta la API del proveedor, pero no valida la firma de la notificación.
-- [ ] Configurar políticas RLS administrativas para que solo usuarios autorizados puedan leer pedidos; el login de `/admin` no sustituye las políticas de base de datos.
-- [ ] Implementar página/pantalla que consulte el estado del pedido de forma segura y permita al comprador recuperar su QR sin exponer datos personales.
-- [ ] Implementar entrega de emails con entradas/QR y proceso de reembolso/cancelación.
-- [ ] Añadir integración oficial de Naranja X una vez elegido y habilitado el producto de cobro e-commerce; no se debe asumir que el checkout/QR de comercios sirve como API web.
-- [ ] Crear flujo administrativo de validación de transferencias y control de acceso de QR usado.
-- [ ] Revisar privacidad, retención de DNI y protección de datos personales.
-- [ ] Probar duplicados/reintentos de webhook, importes incorrectos, fallas de red y pagos en estado pendiente.
-- [ ] Configurar monitoreo y backups.
-
-## Seguridad
-
-Nunca incluir `SUPABASE_SERVICE_ROLE_KEY` ni `MERCADOPAGO_ACCESS_TOKEN` en variables `VITE_*`, frontend o repositorio. La clave pública de Supabase es visible por diseño: las tablas deben estar protegidas con RLS y no tener políticas públicas de lectura/escritura de pedidos o tickets.
+1. Subir los cambios a GitHub.
+2. En Vercel, ir a **Project Settings → Environment Variables**.
+3. Cargar las siguientes variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_CLUB_ALIAS`
+   - `VITE_WHATSAPP_PHONE`
+   - `VITE_CLUB_LOGO_URL` (opcional)
+   - `SMTP_HOST` (`smtp.gmail.com`)
+   - `SMTP_PORT` (`465`)
+   - `SMTP_SECURE` (`true`)
+   - `SMTP_USER` (`tu-correo@gmail.com`)
+   - `SMTP_PASS` (`tu-contraseña-de-aplicación`)
+   - `MAIL_FROM` (`Andes Talleres <tu-correo@gmail.com>`)
+4. Hacer un nuevo deploy o `Redeploy` para que tome los cambios.

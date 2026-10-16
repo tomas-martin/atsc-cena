@@ -1,17 +1,14 @@
 import { useMemo, useState, useEffect } from 'react'
-import QRCode from 'qrcode'
 import {
-  ArrowRight, ArrowLeft, CheckCircle2, CircleHelp,
-  CreditCard, LockKeyhole, Minus, Plus, ShieldCheck, Ticket,
-  WalletCards, Calendar, MapPin, Users, Download, Mail,
-  RefreshCw, Send, Check
+  ArrowRight, ArrowLeft, CircleHelp,
+  Minus, Plus, ShieldCheck, Ticket,
+  WalletCards, Calendar, MapPin, Users,
+  RefreshCw, Check, Copy, MessageCircle, AlertCircle
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
-import { sendTicketsEmailWithResend } from './lib/email'
 import AdminPage from './AdminPage'
 import {
   type BuyerDetails,
-  type PaymentMethod,
   type Step,
   type IssuedTicket,
   type OrderConfirmation
@@ -20,6 +17,12 @@ import {
 // Precio base de referencia por entrada en ARS (si Supabase no define otro)
 const DEFAULT_PRICE_ARS = 25000
 const MAX_PER_ORDER = 10
+
+// Datos bancarios y de contacto oficiales
+const CLUB_ALIAS = (import.meta.env.VITE_CLUB_ALIAS as string) || 'ANDES.TALLERES.FUTSAL'
+const CLUB_CBU = '0170081720000001234567'
+const CLUB_TITULAR = 'Andes Talleres Sport Club'
+const WHATSAPP_PHONE = (import.meta.env.VITE_WHATSAPP_PHONE as string) || '5492610000000'
 
 const money = (amount: number) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount)
@@ -36,7 +39,6 @@ function ClubLogo({
 }) {
   const [imgError, setImgError] = useState(false)
 
-  // Si hay URL y no dio error, renderiza la imagen subida a Supabase
   if (url && !imgError) {
     return (
       <img
@@ -48,7 +50,6 @@ function ClubLogo({
     )
   }
 
-  // Fallback: Escudo vectorial azulgrana del club
   return (
     <div className={`brand-shield shield-${size} ${className}`} aria-label="Andes Talleres">
       <span>AT</span>
@@ -83,19 +84,14 @@ function App() {
     attendees: ['']
   })
 
-  // ── Pago ──
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('mercadopago')
+  // Pago: Exclusivo Transferencia por Alias
   const [transferRef, setTransferRef] = useState('')
+  const [copiedAlias, setCopiedAlias] = useState(false)
 
   // ── Procesamiento y Confirmación ──
   const [busy, setBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [orderConfirmation, setOrderConfirmation] = useState<OrderConfirmation | null>(null)
-  const [qrImages, setQrImages] = useState<Record<string, string>>({})
-  const [resendStatus, setResendStatus] = useState<{ loading: boolean; message: string; success?: boolean }>({
-    loading: false,
-    message: '',
-  })
 
   const total = useMemo(() => unitPrice * quantity, [unitPrice, quantity])
 
@@ -155,6 +151,13 @@ function App() {
     })
   }
 
+  // Copiar alias al portapapeles
+  const handleCopyAlias = () => {
+    navigator.clipboard.writeText(CLUB_ALIAS)
+    setCopiedAlias(true)
+    setTimeout(() => setCopiedAlias(false), 2500)
+  }
+
   // ── Validación paso 2: Entradas y Datos ──
   const handleProceedToPayment = (e: React.FormEvent) => {
     e.preventDefault()
@@ -177,15 +180,15 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // ── Procesamiento del pago y emisión de tickets ──
-  const handlePayOrder = async () => {
+  // ── Registro del pedido pendiente de confirmación ──
+  const handleRegisterOrder = async () => {
     setErrorMessage('')
     setBusy(true)
 
     try {
       const orderId = 'ORD-' + Math.random().toString(36).substring(2, 8).toUpperCase()
 
-      // Generar tickets oficiales con tokens únicos
+      // Generar tickets iniciales
       const tickets: IssuedTicket[] = Array.from({ length: quantity }, (_, i) => {
         const token = crypto.randomUUID ? crypto.randomUUID() : `atsc-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`
         const attendeeName = (buyer.attendees && buyer.attendees[i] && buyer.attendees[i].trim())
@@ -202,29 +205,7 @@ function App() {
         }
       })
 
-      // Generar imágenes QR para cada ticket
-      const generatedQrs: Record<string, string> = {}
-      for (const t of tickets) {
-        const qrContent = JSON.stringify({
-          app: 'ATSC-CENA-2026',
-          ticket: t.ticketNumber,
-          attendee: t.attendeeName,
-          token: t.qrToken,
-          order: t.orderId
-        })
-        const dataUrl = await QRCode.toDataURL(qrContent, {
-          width: 320,
-          margin: 2,
-          color: {
-            dark: '#070e1a',
-            light: '#ffffff',
-          },
-        })
-        generatedQrs[t.qrToken] = dataUrl
-      }
-      setQrImages(generatedQrs)
-
-      // Guardar en base de datos si Supabase está activo
+      // Guardar pedido en Supabase con estado PENDIENTE
       if (supabase) {
         try {
           const { data: orderData, error: orderErr } = await supabase.from('orders').insert({
@@ -235,8 +216,8 @@ function App() {
             quantity,
             unit_price_ars: unitPrice,
             total_ars: total,
-            payment_method: paymentMethod,
-            status: paymentMethod === 'transferencia' ? 'pendiente' : 'pagado',
+            payment_method: 'transferencia',
+            status: 'pendiente',
             transfer_reference: transferRef || null,
           }).select('id').single()
 
@@ -259,49 +240,29 @@ function App() {
         buyer,
         quantity,
         totalArs: total,
-        paymentMethod,
+        paymentMethod: 'transferencia',
         tickets,
         emailSent: false,
       }
       setOrderConfirmation(conf)
 
-      // ── Enviar email con Resend ──
-      setResendStatus({ loading: true, message: 'Enviando entradas con Resend a ' + buyer.email + '...' })
-      const emailResult = await sendTicketsEmailWithResend(conf, generatedQrs)
-      setResendStatus({
-        loading: false,
-        message: emailResult.message,
-        success: emailResult.success
-      })
-
-      // Pasar a la pantalla de confirmación
+      // Pasar a la pantalla de confirmación pendiente y envío de WhatsApp
       setCurrentStep('confirmacion')
       window.scrollTo({ top: 0, behavior: 'smooth' })
 
     } catch (err) {
       console.error(err)
-      setErrorMessage(err instanceof Error ? err.message : 'Error al procesar el pago.')
+      setErrorMessage(err instanceof Error ? err.message : 'Error al registrar el pedido.')
     } finally {
       setBusy(false)
     }
   }
 
-  // Descarga individual del código QR de la entrada
-  const downloadTicketQr = (ticket: IssuedTicket) => {
-    const dataUrl = qrImages[ticket.qrToken]
-    if (!dataUrl) return
-    const link = document.createElement('a')
-    link.href = dataUrl
-    link.download = `Entrada_${ticket.ticketNumber}_${ticket.attendeeName.replace(/\s+/g, '_')}.png`
-    link.click()
-  }
-
-  // Reenviar email con Resend
-  const handleResendEmail = async () => {
-    if (!orderConfirmation) return
-    setResendStatus({ loading: true, message: 'Reenviando email con Resend...' })
-    const res = await sendTicketsEmailWithResend(orderConfirmation, qrImages)
-    setResendStatus({ loading: false, message: res.message, success: res.success })
+  // Generar URL de WhatsApp con mensaje prearmado
+  const getWhatsAppUrl = () => {
+    if (!orderConfirmation) return '#'
+    const msg = `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres.\n\n*Pedido:* #${orderConfirmation.orderId}\n*Titular:* ${orderConfirmation.buyer.fullName}\n*DNI:* ${orderConfirmation.buyer.dni}\n*Entradas:* ${orderConfirmation.quantity}\n*Total:* ${money(orderConfirmation.totalArs)}\n*Email:* ${orderConfirmation.buyer.email}`
+    return `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(msg)}`
   }
 
   return (
@@ -341,7 +302,7 @@ function App() {
           <span className="step-div">›</span>
           <div className={`nav-step ${currentStep === 'confirmacion' ? 'active' : ''}`}>
             <span className="step-num">4</span>
-            <span className="step-label">Entradas QR</span>
+            <span className="step-label">Comprobante</span>
           </div>
         </div>
 
@@ -361,7 +322,6 @@ function App() {
             <div className="fiesta-hero">
               <div className="fiesta-hero-glow" />
 
-              {/* Logo protagonista de Andes Talleres */}
               <div className="fiesta-logo-wrap">
                 <ClubLogo url={logoUrl} size="lg" />
               </div>
@@ -373,7 +333,6 @@ function App() {
                 <span className="fiesta-year">2026</span>
               </h1>
 
-              {/* Datos concisos del evento */}
               <div className="fiesta-quick-info">
                 <div className="info-item">
                   <Calendar size={18} />
@@ -391,7 +350,6 @@ function App() {
                 </div>
               </div>
 
-              {/* Botón Principal para Comprar Entradas */}
               <div className="fiesta-cta-wrap">
                 <button
                   className="btn-huge-red"
@@ -420,7 +378,7 @@ function App() {
               </button>
               <div className="step-badge">PASO 2 DE 3</div>
               <h1>Seleccioná tus entradas y completá tus datos</h1>
-              <p>Elegí la cantidad de entradas e ingresá el correo donde recibirás los códigos QR con Resend.</p>
+              <p>Elegí la cantidad de entradas e ingresá el correo donde recibirás los códigos QR tras confirmar el pago.</p>
             </div>
 
             <form onSubmit={handleProceedToPayment} className="form-container">
@@ -463,7 +421,7 @@ function App() {
                 </div>
 
                 <div className="ticket-total-calc">
-                  <span>Total estimado ({quantity} entrada{quantity > 1 ? 's' : ''}):</span>
+                  <span>Total a pagar ({quantity} entrada{quantity > 1 ? 's' : ''}):</span>
                   <strong>{money(total)}</strong>
                 </div>
               </div>
@@ -516,7 +474,7 @@ function App() {
                   <div className="form-field full">
                     <label>
                       Correo Electrónico *
-                      <span className="highlight-tag">Aquí recibirás los QR con Resend</span>
+                      <span className="highlight-tag">Aquí te llegarán los QR de tus entradas</span>
                     </label>
                     <input
                       type="email"
@@ -525,7 +483,7 @@ function App() {
                       value={buyer.email}
                       onChange={e => updateBuyer('email', e.target.value)}
                     />
-                    <small className="field-hint">Asegurate de escribirlo correctamente. Te llegará un mail automático con el QR de cada entrada.</small>
+                    <small className="field-hint">Asegurate de escribirlo correctamente. Una vez confirmada la transferencia, te llegará el email con las entradas y códigos QR.</small>
                   </div>
                 </div>
 
@@ -533,7 +491,7 @@ function App() {
                 {quantity > 1 && (
                   <div className="attendees-box">
                     <h4><Users size={16} /> Nombres de los asistentes en cada entrada:</h4>
-                    <p className="attendees-desc">Podés personalizar el nombre que aparecerá en cada ticket digital con código QR.</p>
+                    <p className="attendees-desc">Podés personalizar el nombre que aparecerá en cada ticket digital.</p>
                     <div className="attendees-list">
                       {Array.from({ length: quantity }).map((_, idx) => (
                         <div key={idx} className="attendee-row">
@@ -563,7 +521,7 @@ function App() {
                   <ArrowLeft size={16} /> Volver
                 </button>
                 <button type="submit" className="btn-huge-red">
-                  <span>CONTINUAR AL PAGO</span>
+                  <span>CONTINUAR AL PAGO POR ALIAS</span>
                   <ArrowRight size={18} />
                 </button>
               </div>
@@ -572,7 +530,7 @@ function App() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            SECCIÓN 3: PAGO
+            SECCIÓN 3: PAGO EXCLUSIVO POR TRANSFERENCIA DE ALIAS
            ══════════════════════════════════════════════════════════════ */}
         {currentStep === 'pago' && (
           <section className="step-section animate-fade">
@@ -580,100 +538,78 @@ function App() {
               <button className="btn-back" onClick={() => setCurrentStep('entradas_datos')}>
                 <ArrowLeft size={16} /> Modificar datos o cantidad
               </button>
-              <div className="step-badge">PASO 3 DE 3 · FINALIZAR COMPRA</div>
-              <h1>Elegí cómo querés pagar</h1>
-              <p>Al confirmar el pago se emitirán las entradas y se enviarán automáticamente a <b>{buyer.email}</b> con Resend.</p>
+              <div className="step-badge">PASO 3 DE 3 · TRANSFERENCIA POR ALIAS</div>
+              <h1>Transferí al alias oficial del club</h1>
+              <p>Copiá el alias, hacé la transferencia desde tu banco o billetera virtual, y al confirmar te habilitará el envío del comprobante por WhatsApp.</p>
             </div>
 
             <div className="payment-grid-layout">
-              {/* Opciones de pago */}
+              {/* Tarjeta de Transferencia por Alias */}
               <div className="payment-options-col">
-                <div className="dark-card">
-                  <h3 className="section-subhead">Seleccioná tu medio de pago</h3>
+                <div className="dark-card alias-main-card">
+                  <div className="alias-badge-header">
+                    <span className="alias-pill">PAGO OFICIAL ATSC</span>
+                    <span className="alias-only-note">Medio de pago único</span>
+                  </div>
 
-                  {/* Mercado Pago */}
-                  <label className={`pay-choice ${paymentMethod === 'mercadopago' ? 'active' : ''}`}>
+                  <h3 className="alias-box-title">Datos para transferir:</h3>
+
+                  {/* Caja destacada del Alias */}
+                  <div className="alias-highlight-box">
+                    <div className="alias-info-col">
+                      <small>ALIAS BANCARIO OFICIAL:</small>
+                      <strong className="alias-code">{CLUB_ALIAS}</strong>
+                    </div>
+                    <button
+                      type="button"
+                      className={`btn-copy-alias ${copiedAlias ? 'copied' : ''}`}
+                      onClick={handleCopyAlias}
+                    >
+                      {copiedAlias ? (
+                        <>
+                          <Check size={16} /> ¡COPIADO!
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={16} /> COPIAR ALIAS
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Detalles bancarios */}
+                  <div className="alias-details-list">
+                    <div className="cbu-row">
+                      <span>Importe exacto a transferir:</span>
+                      <strong className="text-red-huge">{money(total)}</strong>
+                    </div>
+                    <div className="cbu-row">
+                      <span>Titular de la cuenta:</span>
+                      <b>{CLUB_TITULAR}</b>
+                    </div>
+                    <div className="cbu-row">
+                      <span>CBU:</span>
+                      <code>{CLUB_CBU}</code>
+                    </div>
+                    <div className="cbu-row">
+                      <span>Entradas a reservar:</span>
+                      <b>{quantity} entrada{quantity > 1 ? 's' : ''} general{quantity > 1 ? 'es' : ''}</b>
+                    </div>
+                  </div>
+
+                  <div className="form-field" style={{ marginTop: '18px' }}>
+                    <label>Número de comprobante / Referencia (Opcional):</label>
                     <input
-                      type="radio"
-                      name="payment"
-                      checked={paymentMethod === 'mercadopago'}
-                      onChange={() => setPaymentMethod('mercadopago')}
+                      type="text"
+                      placeholder="Ej: 98451230"
+                      value={transferRef}
+                      onChange={e => setTransferRef(e.target.value)}
                     />
-                    <div className="pay-logo mp">MP</div>
-                    <div className="pay-info">
-                      <strong>Mercado Pago</strong>
-                      <span>Tarjetas de débito, crédito, dinero en cuenta o cuotas.</span>
-                    </div>
-                    <div className="pay-radio-circle" />
-                  </label>
-
-                  {/* Transferencia */}
-                  <label className={`pay-choice ${paymentMethod === 'transferencia' ? 'active' : ''}`}>
-                    <input
-                      type="radio"
-                      name="payment"
-                      checked={paymentMethod === 'transferencia'}
-                      onChange={() => setPaymentMethod('transferencia')}
-                    />
-                    <div className="pay-logo bank"><CreditCard size={20} /></div>
-                    <div className="pay-info">
-                      <strong>Transferencia Bancaria Directa</strong>
-                      <span>Transferís directamente a la cuenta del club.</span>
-                    </div>
-                    <div className="pay-radio-circle" />
-                  </label>
-
-                  {/* Naranja X */}
-                  <label className={`pay-choice ${paymentMethod === 'naranja_x' ? 'active' : ''}`}>
-                    <input
-                      type="radio"
-                      name="payment"
-                      checked={paymentMethod === 'naranja_x'}
-                      onChange={() => setPaymentMethod('naranja_x')}
-                    />
-                    <div className="pay-logo nx">NX</div>
-                    <div className="pay-info">
-                      <strong>Naranja X</strong>
-                      <span>Con dinero en cuenta o tarjeta Naranja Plan Z.</span>
-                    </div>
-                    <div className="pay-radio-circle" />
-                  </label>
-
-                  {/* Datos de transferencia bancaria */}
-                  {paymentMethod === 'transferencia' && (
-                    <div className="transfer-data-box animate-fade">
-                      <h4>Datos bancarios oficiales de Andes Talleres:</h4>
-                      <div className="cbu-row">
-                        <span>Alias CBU:</span>
-                        <code>ANDES.TALLERES.FUTSAL</code>
-                      </div>
-                      <div className="cbu-row">
-                        <span>CBU:</span>
-                        <code>0170081720000001234567</code>
-                      </div>
-                      <div className="cbu-row">
-                        <span>Titular:</span>
-                        <b>Andes Talleres Sport Club</b>
-                      </div>
-                      <div className="cbu-row">
-                        <span>Importe exacto:</span>
-                        <strong className="text-red">{money(total)}</strong>
-                      </div>
-                      <div className="form-field" style={{ marginTop: '14px' }}>
-                        <label>Número de comprobante / Referencia (Opcional):</label>
-                        <input
-                          type="text"
-                          placeholder="Ej: 89347291"
-                          value={transferRef}
-                          onChange={e => setTransferRef(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                  )}
+                  </div>
                 </div>
               </div>
 
-              {/* Resumen */}
+              {/* Resumen y Botón de Confirmación */}
               <div className="summary-col">
                 <div className="dark-card summary-card">
                   <h3>Resumen del Pedido</h3>
@@ -691,16 +627,16 @@ function App() {
                       <span>{buyer.dni}</span>
                     </div>
                     <div className="sum-row">
-                      <span>Email de entrega:</span>
+                      <span>Email para recibir QR:</span>
                       <b className="email-highlight">{buyer.email}</b>
                     </div>
                     <div className="sum-divider" />
                     <div className="sum-row">
-                      <span>Entradas solicitadas:</span>
+                      <span>Entradas:</span>
                       <b>{quantity} x {money(unitPrice)}</b>
                     </div>
                     <div className="sum-row total-highlight">
-                      <span>TOTAL A PAGAR:</span>
+                      <span>TOTAL A TRANSFERIR:</span>
                       <strong className="price-total">{money(total)}</strong>
                     </div>
                   </div>
@@ -714,18 +650,18 @@ function App() {
 
                   <button
                     className="btn-huge-red full-width"
-                    onClick={handlePayOrder}
+                    onClick={handleRegisterOrder}
                     disabled={busy}
                   >
                     {busy ? (
                       <>
                         <RefreshCw size={18} className="spinner" />
-                        <span>PROCESANDO PAGO Y EMITIENDO QR...</span>
+                        <span>REGISTRANDO PEDIDO...</span>
                       </>
                     ) : (
                       <>
-                        <LockKeyhole size={18} />
-                        <span>PAGAR Y GENERAR ENTRADAS ({money(total)})</span>
+                        <Check size={18} />
+                        <span>REGISTRAR Y ENVIAR COMPROBANTE</span>
                         <ArrowRight size={18} />
                       </>
                     )}
@@ -733,7 +669,7 @@ function App() {
 
                   <div className="security-guarantee">
                     <ShieldCheck size={16} />
-                    <span>Pago protegido · Despacho automático de QR por Resend</span>
+                    <span>Validación directa por administración de Andes Talleres</span>
                   </div>
                 </div>
               </div>
@@ -742,120 +678,97 @@ function App() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            SECCIÓN 4: CONFIRMACIÓN Y ENTRADAS CON CÓDIGOS QR
+            SECCIÓN 4: CONFIRMACIÓN PENDIENTE + BOTÓN DE WHATSAPP
            ══════════════════════════════════════════════════════════════ */}
         {currentStep === 'confirmacion' && orderConfirmation && (
           <section className="step-section animate-fade">
-            <div className="success-banner">
-              <div className="success-icon-wrap">
-                <CheckCircle2 size={46} />
+            <div className="pending-confirmation-banner">
+              <div className="pending-icon-wrap">
+                <AlertCircle size={46} />
               </div>
-              <h1>¡PAGO CONFIRMADO Y ENTRADAS EMITIDAS!</h1>
-              <p>Tu lugar en la Cena de Fin de Año de Andes Talleres ya está reservado.</p>
-              <div className="order-id-tag">PEDIDO #{orderConfirmation.orderId}</div>
+              <span className="status-badge-pending">PENDIENTE DE VALIDACIÓN</span>
+              <h1>¡PEDIDO REGISTRADO #{orderConfirmation.orderId}!</h1>
+              <p>
+                Para confirmar tu compra, por favor <b>envianos el comprobante de transferencia por WhatsApp</b>.
+              </p>
             </div>
 
-            {/* Notificación de Resend */}
-            <div className="resend-notification-card">
-              <div className="resend-badge-row">
-                <span className="resend-pill"><Send size={13} /> ENVÍO POR RESEND</span>
-                {resendStatus.loading && <span className="status-live">Enviando correo...</span>}
-                {!resendStatus.loading && resendStatus.success && <span className="status-ok"><Check size={14} /> Correo enviado</span>}
-              </div>
-              <div className="resend-content">
-                <div className="resend-icon-circle"><Mail size={24} /></div>
+            {/* Gran botón de WhatsApp para enviar el comprobante */}
+            <div className="whatsapp-cta-card">
+              <div className="wa-card-header">
+                <div className="wa-icon-circle">
+                  <MessageCircle size={28} />
+                </div>
                 <div>
-                  <h3>Te enviamos las entradas a tu correo</h3>
-                  <p>
-                    Enviamos las <b>{orderConfirmation.quantity} entrada(s)</b> con sus códigos QR en formato digital a: <b>{orderConfirmation.buyer.email}</b>.
-                  </p>
-                  <small className="resend-msg">{resendStatus.message}</small>
+                  <h3>Paso Final: Enviar Comprobante</h3>
+                  <p>Hacé clic en el botón para abrir WhatsApp con los datos de tu pedido ya listos para adjuntar la captura del comprobante.</p>
                 </div>
               </div>
-              <button
-                className="btn-resend-again"
-                onClick={handleResendEmail}
-                disabled={resendStatus.loading}
+
+              <a
+                href={getWhatsAppUrl()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-whatsapp-huge"
               >
-                <RefreshCw size={14} className={resendStatus.loading ? 'spinner' : ''} />
-                Reenviar correo con Resend
-              </button>
+                <MessageCircle size={22} />
+                <span>ENVIAR COMPROBANTE POR WHATSAPP</span>
+              </a>
+
+              <div className="resend-info-note">
+                <p>
+                  📧 <b>¿Cuándo me llega la entrada con el código QR?</b><br />
+                  Apenas el equipo de administración verifique el pago en el banco, <b>recibirás automáticamente un correo a {orderConfirmation.buyer.email}</b> con los códigos QR de acceso para cada asistente.
+                </p>
+              </div>
             </div>
 
-            {/* Entradas con Códigos QR */}
-            <div className="tickets-display-container">
-              <h2 className="text-center" style={{ marginBottom: '10px' }}>TUS ENTRADAS CON CÓDIGO QR</h2>
-              <p className="text-center text-muted" style={{ marginBottom: '32px' }}>
-                Presentá el código QR desde tu celular o descargalo en tu dispositivo.
-              </p>
+            {/* Resumen de los datos transferidos */}
+            <div className="dark-card" style={{ marginTop: '24px' }}>
+              <div className="card-top-header">
+                <div>
+                  <h3>Detalle de tu compra</h3>
+                  <p>Guardá el número de pedido: <b>#{orderConfirmation.orderId}</b></p>
+                </div>
+                <div className="card-right-badge">Importe: {money(orderConfirmation.totalArs)}</div>
+              </div>
 
-              <div className="tickets-grid">
-                {orderConfirmation.tickets.map(t => (
-                  <div key={t.ticketNumber} className="official-ticket-card">
-                    <div className="ticket-top-strip">
-                      <ClubLogo url={logoUrl} size="sm" />
-                      <div className="ticket-club-info">
-                        <strong>ANDES TALLERES SPORT CLUB</strong>
-                        <small>CENA FIN DE AÑO 2026</small>
-                      </div>
-                      <div className="ticket-number-badge">
-                        #{t.ticketNumber}
-                      </div>
-                    </div>
-
-                    <div className="ticket-perforations">
-                      <span className="perf-left" />
-                      <span className="perf-line" />
-                      <span className="perf-right" />
-                    </div>
-
-                    <div className="ticket-body">
-                      <div className="ticket-meta">
-                        <div className="ticket-attendee-name">
-                          <small>ASISTENTE:</small>
-                          <h3>{t.attendeeName}</h3>
-                        </div>
-                        <div className="ticket-event-details">
-                          <div><Calendar size={13} /> Sábado 19 de Diciembre · 21:30 hs</div>
-                          <div><MapPin size={13} /> Microestadio Andes Talleres</div>
-                        </div>
-                      </div>
-
-                      <div className="qr-container">
-                        {qrImages[t.qrToken] ? (
-                          <img
-                            src={qrImages[t.qrToken]}
-                            alt={`Código QR entrada ${t.ticketNumber}`}
-                            className="qr-image"
-                          />
-                        ) : (
-                          <div className="qr-loading">Generando QR...</div>
-                        )}
-                        <span className="qr-token-id">TOKEN: {t.qrToken.slice(0, 18)}...</span>
-                      </div>
-                    </div>
-
-                    <div className="ticket-footer-action">
-                      <button className="btn-download-qr" onClick={() => downloadTicketQr(t)}>
-                        <Download size={15} /> Descargar QR
-                      </button>
-                    </div>
+              <div className="alias-details-list">
+                <div className="cbu-row">
+                  <span>Alias donde transferiste:</span>
+                  <div className="copy-row">
+                    <code>{CLUB_ALIAS}</code>
+                    <button type="button" className="btn-mini-copy" onClick={handleCopyAlias}>
+                      {copiedAlias ? '¡Copiado!' : 'Copiar'}
+                    </button>
                   </div>
-                ))}
+                </div>
+                <div className="cbu-row">
+                  <span>Titular de la reserva:</span>
+                  <b>{orderConfirmation.buyer.fullName} (DNI: {orderConfirmation.buyer.dni})</b>
+                </div>
+                <div className="cbu-row">
+                  <span>Entradas solicitadas:</span>
+                  <b>{orderConfirmation.quantity} persona(s)</b>
+                </div>
+                <div className="cbu-row">
+                  <span>Email registrado:</span>
+                  <b>{orderConfirmation.buyer.email}</b>
+                </div>
               </div>
+            </div>
 
-              <div className="confirmation-final-actions">
-                <button
-                  className="btn-secondary"
-                  onClick={() => {
-                    setCurrentStep('fiesta')
-                    setOrderConfirmation(null)
-                    window.scrollTo({ top: 0, behavior: 'smooth' })
-                  }}
-                >
-                  Volver al inicio
-                </button>
-              </div>
+            <div className="confirmation-final-actions" style={{ marginTop: '30px' }}>
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  setCurrentStep('fiesta')
+                  setOrderConfirmation(null)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                }}
+              >
+                Volver al inicio
+              </button>
             </div>
           </section>
         )}
@@ -882,7 +795,7 @@ function App() {
             🔒 Panel Admin / Escáner QR
           </button>
         </div>
-        <small>© 2026 Andes Talleres Sport Club. Sistema oficial de venta y emisión de entradas digitales con Resend.</small>
+        <small>© 2026 Andes Talleres Sport Club. Sistema oficial de venta y emisión de entradas digitales.</small>
       </footer>
     </div>
   )
