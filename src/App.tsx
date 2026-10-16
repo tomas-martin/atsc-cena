@@ -6,7 +6,7 @@ import {
   WalletCards, Calendar, MapPin, Users, Download, Mail,
   RefreshCw, Send, Check
 } from 'lucide-react'
-import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { supabase } from './lib/supabase'
 import { sendTicketsEmailWithResend } from './lib/email'
 import AdminPage from './AdminPage'
 import {

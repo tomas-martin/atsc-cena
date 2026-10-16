@@ -36,7 +36,7 @@ export async function sendTicketsEmailWithResend(
   // 2. Si hay clave directa en el frontend (útil para pruebas y desarrollo)
   if (resendApiKey && !resendApiKey.includes('TU_RESEND')) {
     try {
-      const ticketsHtml = confirmation.tickets.map((t, idx) => `
+      const ticketsHtml = confirmation.tickets.map(t => `
         <div style="background:#0f1c2e; border: 1px solid #1a2d47; border-radius: 8px; padding: 20px; margin-bottom: 20px; color: #ffffff; font-family: sans-serif;">
           <div style="border-bottom: 2px solid #d92736; padding-bottom: 10px; margin-bottom: 12px; display: flex; justify-content: space-between;">
             <strong style="color: #ffffff; font-size: 16px;">ENTRADA #${t.ticketNumber}</strong>
