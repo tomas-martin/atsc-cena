@@ -210,57 +210,79 @@ function App() {
     setBusy(true)
 
     try {
-      const orderId = 'ORD-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+      let savedOrderId = ''
 
-      // Generar tickets iniciales
+      // 1. Guardar pedido en Supabase con estado PENDIENTE
+      if (supabase) {
+        const { data: orderData, error: orderErr } = await supabase.from('orders').insert({
+          buyer_full_name: buyer.fullName,
+          buyer_dni: buyer.dni,
+          buyer_email: buyer.email,
+          buyer_phone: buyer.phone,
+          quantity,
+          unit_price_ars: unitPrice,
+          total_ars: total,
+          payment_method: 'transferencia',
+          status: 'pendiente',
+          transfer_reference: transferRef || null,
+        }).select('id').single()
+
+        if (orderErr) {
+          console.error('Error al insertar orden en Supabase:', orderErr)
+          throw new Error(`Error en la base de datos (${orderErr.code}): ${orderErr.message}`)
+        }
+
+        if (orderData?.id) {
+          savedOrderId = orderData.id
+        }
+      }
+
+      // Código de orden limpio y legible (ej: #ATSC-A8F12B)
+      const displayOrderId = savedOrderId
+        ? `ATSC-${savedOrderId.slice(0, 6).toUpperCase()}`
+        : `ATSC-${Math.floor(100000 + Math.random() * 900000)}`
+
+      // 2. Generar tickets con UUIDs válidos para la base de datos
       const tickets: IssuedTicket[] = Array.from({ length: quantity }, (_, i) => {
-        const token = crypto.randomUUID ? crypto.randomUUID() : `atsc-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`
+        const uuidToken = (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+              const r = (Math.random() * 16) | 0
+              const v = c === 'x' ? r : (r & 0x3) | 0x8
+              return v.toString(16)
+            })
+
         const attendeeName = (buyer.attendees && buyer.attendees[i] && buyer.attendees[i].trim())
           ? buyer.attendees[i].trim()
           : (i === 0 ? buyer.fullName : `Acompañante ${i + 1}`)
+
         return {
-          ticketNumber: `ATSC-${String(i + 1).padStart(2, '0')}-${orderId.slice(-4)}`,
+          ticketNumber: `ATSC-${String(i + 1).padStart(2, '0')}-${displayOrderId.replace('ATSC-', '')}`,
           attendeeName,
-          qrToken: token,
-          orderId,
+          qrToken: uuidToken,
+          orderId: displayOrderId,
           eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
           date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
           venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
         }
       })
 
-      // Guardar pedido en Supabase con estado PENDIENTE
-      if (supabase) {
-        try {
-          const { data: orderData, error: orderErr } = await supabase.from('orders').insert({
-            buyer_full_name: buyer.fullName,
-            buyer_dni: buyer.dni,
-            buyer_email: buyer.email,
-            buyer_phone: buyer.phone,
-            quantity,
-            unit_price_ars: unitPrice,
-            total_ars: total,
-            payment_method: 'transferencia',
-            status: 'pendiente',
-            transfer_reference: transferRef || null,
-          }).select('id').single()
-
-          if (!orderErr && orderData?.id) {
-            const ticketRows = tickets.map(t => ({
-              order_id: orderData.id,
-              attendee_name: t.attendeeName,
-              qr_token: t.qrToken,
-              status: 'valid'
-            }))
-            await supabase.from('tickets').insert(ticketRows)
-          }
-        } catch (dbErr) {
-          console.warn('Registro en DB:', dbErr)
+      // 3. Guardar tickets en Supabase
+      if (supabase && savedOrderId) {
+        const ticketRows = tickets.map(t => ({
+          order_id: savedOrderId,
+          attendee_name: t.attendeeName,
+          qr_token: t.qrToken,
+          status: 'valid'
+        }))
+        const { error: ticketErr } = await supabase.from('tickets').insert(ticketRows)
+        if (ticketErr) {
+          console.warn('Registro de tickets en Supabase:', ticketErr)
         }
       }
 
       const conf: OrderConfirmation = {
-        orderId,
+        orderId: displayOrderId,
         buyer,
         quantity,
         totalArs: total,

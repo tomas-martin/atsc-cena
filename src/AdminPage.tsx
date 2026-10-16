@@ -654,11 +654,14 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
   // Filtrado de pedidos
   const filteredOrders = orders.filter(o => {
     const q = searchQuery.toLowerCase()
+    const orderNum = `atsc-${o.id.slice(0, 6)}`.toLowerCase()
     const matchesSearch =
       !q ||
       o.buyer_full_name.toLowerCase().includes(q) ||
       o.buyer_email.toLowerCase().includes(q) ||
-      o.buyer_dni.includes(q)
+      o.buyer_dni.includes(q) ||
+      o.id.toLowerCase().includes(q) ||
+      orderNum.includes(q)
 
     if (!matchesSearch) return false
     if (filterStatus === 'pagado') return o.status === 'pagado'
@@ -997,6 +1000,7 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
             <table className="admin-table">
               <thead>
                 <tr>
+                  <th>N° Pedido</th>
                   <th>Fecha</th>
                   <th>Comprador</th>
                   <th>DNI</th>
@@ -1011,6 +1015,11 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
               <tbody>
                 {filteredOrders.map(order => (
                   <tr key={order.id} className={order.status === 'pendiente' ? 'row-pending' : ''}>
+                    <td>
+                      <span className="order-num-pill">
+                        #ATSC-{order.id.slice(0, 6).toUpperCase()}
+                      </span>
+                    </td>
                     <td>{new Date(order.created_at).toLocaleDateString('es-AR')}</td>
                     <td><strong>{order.buyer_full_name}</strong></td>
                     <td>{order.buyer_dni}</td>
