@@ -88,7 +88,11 @@ export async function sendTicketsEmail(
 
     if (!response.ok) {
       const errData = await response.json().catch(() => null)
-      const errorMsg = errData?.error || `Error en el servidor al despachar correo (Status ${response.status})`
+      const errorMsg =
+        errData?.error ||
+        (response.status === 500
+          ? 'Error 500 en Vercel al despachar el correo. Verificá que las variables SMTP (SMTP_USER, SMTP_PASS) estén configuradas en Vercel y hacé un Redeploy.'
+          : `Error en el servidor al despachar correo (Status ${response.status})`)
       // Loguear error sin credenciales
       console.error('[SMTP Client Error]:', errorMsg)
       return {

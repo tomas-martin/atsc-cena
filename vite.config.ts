@@ -32,8 +32,9 @@ export default defineConfig(({ mode }) => {
                 const secure = (env.SMTP_SECURE || process.env.SMTP_SECURE) !== undefined
                   ? (env.SMTP_SECURE === 'true' || env.SMTP_SECURE === '1' || process.env.SMTP_SECURE === 'true')
                   : port === 465
-                const user = env.SMTP_USER || process.env.SMTP_USER
-                const pass = env.SMTP_PASS || process.env.SMTP_PASS
+                const user = (env.SMTP_USER || process.env.SMTP_USER)?.trim()
+                const rawPass = env.SMTP_PASS || process.env.SMTP_PASS
+                const pass = rawPass ? rawPass.replace(/\s+/g, '').trim() : undefined
                 const mailFrom =
                   env.MAIL_FROM ||
                   process.env.MAIL_FROM ||

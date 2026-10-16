@@ -568,6 +568,96 @@ export default function AdminPage({
     }
   }
 
+  // Reenviar email con entradas QR para un pedido ya pagado
+  async function handleResendQrEmail(order: OrderRow) {
+    setApprovingOrderId(order.id)
+    setActionFeedback(null)
+
+    try {
+      let orderTickets: TicketRow[] = []
+      if (supabase) {
+        const { data: existing } = await supabase
+          .from('tickets')
+          .select('*')
+          .eq('order_id', order.id)
+        if (existing && existing.length > 0) {
+          orderTickets = existing as TicketRow[]
+        }
+      }
+
+      if (orderTickets.length === 0) {
+        throw new Error('No se encontraron entradas en la base de datos para este pedido.')
+      }
+
+      const issuedTickets: IssuedTicket[] = orderTickets.map((t, i) => ({
+        ticketNumber: `ATSC-${String(i + 1).padStart(2, '0')}-${order.id.slice(-4)}`,
+        attendeeName: t.attendee_name,
+        qrToken: t.qr_token,
+        orderId: order.id,
+        eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
+        date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
+        venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
+      }))
+
+      const generatedQrs: Record<string, string> = {}
+      for (const t of issuedTickets) {
+        const qrContent = JSON.stringify({
+          app: 'ATSC-CENA-2026',
+          ticket: t.ticketNumber,
+          attendee: t.attendeeName,
+          token: t.qrToken,
+          order: t.orderId,
+        })
+        const dataUrl = await QRCode.toDataURL(qrContent, {
+          width: 320,
+          margin: 2,
+          color: {
+            dark: '#070e1a',
+            light: '#ffffff',
+          },
+        })
+        generatedQrs[t.qrToken] = dataUrl
+      }
+
+      const conf: OrderConfirmation = {
+        orderId: order.id,
+        buyer: {
+          fullName: order.buyer_full_name,
+          dni: order.buyer_dni,
+          email: order.buyer_email,
+          phone: order.buyer_phone,
+        },
+        quantity: order.quantity,
+        totalArs: order.total_ars,
+        paymentMethod: 'transferencia',
+        tickets: issuedTickets,
+        emailSent: false,
+      }
+
+      const emailResult = await sendTicketsEmail(conf, generatedQrs)
+
+      if (emailResult.success) {
+        setActionFeedback({
+          message: `¡Email reenviado exitosamente con ${issuedTickets.length} código(s) QR a ${order.buyer_email}!`,
+          success: true,
+        })
+      } else {
+        setActionFeedback({
+          message: `Nota sobre el correo: ${emailResult.message}`,
+          success: false,
+        })
+      }
+    } catch (err: any) {
+      console.error('Error al reenviar entradas:', err)
+      setActionFeedback({
+        message: err instanceof Error ? err.message : 'Error al reenviar el correo.',
+        success: false,
+      })
+    } finally {
+      setApprovingOrderId(null)
+    }
+  }
+
   const money = (n: number) =>
     new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n)
 
@@ -1093,9 +1183,28 @@ export default function AdminPage({
                           )}
                         </button>
                       ) : (
-                        <span className="badge-confirmed">
-                          <Check size={13} /> QR Despachado
-                        </span>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                          <span className="badge-confirmed">
+                            <Check size={13} /> Pagado
+                          </span>
+                          <button
+                            type="button"
+                            className="btn-action-resend"
+                            title="Reenviar códigos QR al correo del comprador"
+                            onClick={() => void handleResendQrEmail(order)}
+                            disabled={approvingOrderId === order.id}
+                          >
+                            {approvingOrderId === order.id ? (
+                              <>
+                                <RefreshCw size={12} className="spinner" /> Reenviando...
+                              </>
+                            ) : (
+                              <>
+                                <Send size={12} /> Reenviar QR
+                              </>
+                            )}
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
