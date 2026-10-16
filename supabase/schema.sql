@@ -1,0 +1,69 @@
+-- ATSC Cena 2026 — ejecutar en Supabase SQL Editor.
+-- Antes de producción: definir precio/cupo/fecha reales y revisar políticas con el responsable del club.
+
+create extension if not exists pgcrypto;
+
+create type public.payment_method as enum ('mercadopago', 'naranja_x', 'transferencia');
+create type public.order_status as enum ('pendiente', 'pagado', 'rechazado', 'cancelado', 'reembolso');
+
+create table public.event_config (
+  id uuid primary key default gen_random_uuid(),
+  event_name text not null default 'Cena de Fin de Año 2026 - ATSC',
+  event_date timestamptz,
+  venue text,
+  ticket_price_ars integer check (ticket_price_ars is null or ticket_price_ars >= 0),
+  capacity integer check (capacity is null or capacity >= 0),
+  sales_enabled boolean not null default false,
+  logo_url text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.event_config (event_name, ticket_price_ars, capacity, sales_enabled, logo_url)
+values ('Cena de Fin de Año 2026 - ATSC', null, null, false, null);
+
+create table public.orders (
+  id uuid primary key default gen_random_uuid(),
+  buyer_full_name text not null,
+  buyer_dni text not null,
+  buyer_email text not null,
+  buyer_phone text not null,
+  quantity integer not null check (quantity between 1 and 10),
+  unit_price_ars integer not null check (unit_price_ars >= 0),
+  total_ars integer not null check (total_ars = quantity * unit_price_ars),
+  payment_method public.payment_method not null,
+  status public.order_status not null default 'pendiente',
+  provider_preference_id text,
+  provider_payment_id text,
+  transfer_reference text,
+  created_at timestamptz not null default now(),
+  paid_at timestamptz,
+  constraint orders_provider_payment_unique unique (provider_payment_id)
+);
+
+create table public.tickets (
+  id uuid primary key default gen_random_uuid(),
+  order_id uuid not null references public.orders(id) on delete restrict,
+  attendee_name text,
+  qr_token uuid not null unique default gen_random_uuid(),
+  status text not null default 'valid' check (status in ('valid', 'used', 'cancelled')),
+  checked_in_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+create index orders_status_created_idx on public.orders(status, created_at desc);
+create index tickets_order_id_idx on public.tickets(order_id);
+
+-- Seguridad: ningún visitante puede leer datos personales o modificar pedidos directamente.
+alter table public.event_config enable row level security;
+alter table public.orders enable row level security;
+alter table public.tickets enable row level security;
+
+-- Solo configuración pública no sensible. Para mantenerlo simple, el precio/fecha se puede leer
+-- mediante una Edge Function pública que devuelva solo campos aprobados.
+-- No se crea policy pública sobre orders ni tickets.
+-- Las Edge Functions usan SUPABASE_SERVICE_ROLE_KEY solo del lado servidor y validan toda entrada.
+
+-- Crear un usuario administrador desde Supabase Auth Dashboard.
+-- Para el panel, implementar una tabla admin_users vinculada a auth.users y políticas explícitas
+-- antes de permitir lectura de pedidos. No dar acceso público a orders/tickets.
