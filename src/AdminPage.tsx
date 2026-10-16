@@ -562,6 +562,13 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
 
           {loginMethod === 'pin' ? (
             <form onSubmit={handlePinLogin} className="login-form">
+              <div style={{ background: 'rgba(217, 39, 54, 0.12)', border: '1px solid rgba(217, 39, 54, 0.35)', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px', fontSize: '13px', color: '#c2cad7' }}>
+                <span style={{ color: '#ffffff', fontWeight: '700' }}>💡 Acceso directo sin registrarse:</span>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', lineHeight: '1.4' }}>
+                  No necesitás crear ningún usuario previo en la base de datos. Ingresá directamente con el PIN predeterminado: <strong style={{ color: '#ff4d5a', fontSize: '14px', letterSpacing: '1px' }}>2026</strong>
+                </p>
+              </div>
+
               <label>
                 PIN de Acceso
                 <input
@@ -570,7 +577,7 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
                   maxLength={6}
                   value={pin}
                   onChange={e => setPin(e.target.value)}
-                  placeholder="Ingresá el PIN (por defecto: 2026)"
+                  placeholder="Ingresá 2026"
                   autoFocus
                   required
                 />

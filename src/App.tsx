@@ -3,7 +3,7 @@ import {
   ArrowRight, ArrowLeft, CircleHelp,
   Minus, Plus, ShieldCheck, Ticket,
   WalletCards, Calendar, MapPin, Users,
-  RefreshCw, Check, Copy, MessageCircle, AlertCircle
+  RefreshCw, Check, Copy, MessageCircle, AlertCircle, LockKeyhole
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import AdminPage from './AdminPage'
@@ -63,7 +63,31 @@ function App() {
     typeof window !== 'undefined' && window.location.pathname === '/admin'
   )
 
-  if (showAdmin) return <AdminPage onBack={() => setShowAdmin(false)} />
+  useEffect(() => {
+    const handlePopState = () => {
+      setShowAdmin(window.location.pathname === '/admin')
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [])
+
+  const handleOpenAdmin = () => {
+    setShowAdmin(true)
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', '/admin')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  const handleCloseAdmin = () => {
+    setShowAdmin(false)
+    if (typeof window !== 'undefined') {
+      window.history.pushState({}, '', '/')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  if (showAdmin) return <AdminPage onBack={handleCloseAdmin} />
 
   // ── Estados de la navegación por secciones ──
   const [currentStep, setCurrentStep] = useState<Step>('fiesta')
@@ -306,11 +330,17 @@ function App() {
           </div>
         </div>
 
-        {currentStep === 'fiesta' && (
-          <button className="nav-cta" onClick={() => setCurrentStep('entradas_datos')}>
-            Comprar Entradas <ArrowRight size={15} />
+        <div className="nav-actions">
+          <button className="nav-admin-btn" onClick={handleOpenAdmin} title="Ingreso al Panel Administrador">
+            <LockKeyhole size={13} />
+            <span>Admin</span>
           </button>
-        )}
+          {currentStep === 'fiesta' && (
+            <button className="nav-cta" onClick={() => setCurrentStep('entradas_datos')}>
+              Comprar Entradas <ArrowRight size={15} />
+            </button>
+          )}
+        </div>
       </header>
 
       <main className="main-content">
@@ -787,10 +817,7 @@ function App() {
           <div>ORGULLO AZULGRANA DESDE 1932 <b>✳</b> SOMOS FAMILIA</div>
           <button 
             className="footer-admin-btn"
-            onClick={() => {
-              setShowAdmin(true)
-              window.scrollTo({ top: 0, behavior: 'smooth' })
-            }}
+            onClick={handleOpenAdmin}
           >
             🔒 Panel Admin / Escáner QR
           </button>
