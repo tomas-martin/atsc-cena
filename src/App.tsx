@@ -7,6 +7,7 @@ import {
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import AdminPage from './AdminPage'
+import ClubLogo from './ClubLogo'
 import {
   type BuyerDetails,
   type Step,
@@ -27,37 +28,6 @@ const WHATSAPP_PHONE = (import.meta.env.VITE_WHATSAPP_PHONE as string) || '54926
 const money = (amount: number) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount)
 
-// Componente para mostrar el Logo de Andes Talleres (imagen de Supabase o escudo azulgrana oficial)
-function ClubLogo({
-  url,
-  size = 'md',
-  className = ''
-}: {
-  url?: string | null
-  size?: 'sm' | 'md' | 'lg'
-  className?: string
-}) {
-  const [imgError, setImgError] = useState(false)
-
-  if (url && !imgError) {
-    return (
-      <img
-        src={url}
-        alt="Andes Talleres Sport Club"
-        className={`club-logo-img logo-${size} ${className}`}
-        onError={() => setImgError(true)}
-      />
-    )
-  }
-
-  return (
-    <div className={`brand-shield shield-${size} ${className}`} aria-label="Andes Talleres">
-      <span>AT</span>
-      <small>SC</small>
-    </div>
-  )
-}
-
 function App() {
   const [showAdmin, setShowAdmin] = useState(
     typeof window !== 'undefined' && window.location.pathname === '/admin'
@@ -75,7 +45,7 @@ function App() {
     setShowAdmin(true)
     if (typeof window !== 'undefined') {
       window.history.pushState({}, '', '/admin')
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      window.scrollTo({ top: 0, behavior: 'instant' })
     }
   }
 
@@ -83,11 +53,9 @@ function App() {
     setShowAdmin(false)
     if (typeof window !== 'undefined') {
       window.history.pushState({}, '', '/')
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      window.scrollTo({ top: 0, behavior: 'instant' })
     }
   }
-
-  if (showAdmin) return <AdminPage onBack={handleCloseAdmin} />
 
   // ── Estados de la navegación por secciones ──
   const [currentStep, setCurrentStep] = useState<Step>('fiesta')
@@ -109,7 +77,6 @@ function App() {
   })
 
   // Pago: Exclusivo Transferencia por Alias
-  const [transferRef, setTransferRef] = useState('')
   const [copiedAlias, setCopiedAlias] = useState(false)
 
   // ── Procesamiento y Confirmación ──
@@ -224,7 +191,7 @@ function App() {
           total_ars: total,
           payment_method: 'transferencia',
           status: 'pendiente',
-          transfer_reference: transferRef || null,
+          transfer_reference: null,
         }).select('id').single()
 
         if (orderErr) {
@@ -309,6 +276,10 @@ function App() {
     if (!orderConfirmation) return '#'
     const msg = `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres.\n\n*Pedido:* #${orderConfirmation.orderId}\n*Titular:* ${orderConfirmation.buyer.fullName}\n*DNI:* ${orderConfirmation.buyer.dni}\n*Entradas:* ${orderConfirmation.quantity}\n*Total:* ${money(orderConfirmation.totalArs)}\n*Email:* ${orderConfirmation.buyer.email}`
     return `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(msg)}`
+  }
+
+  if (showAdmin) {
+    return <AdminPage logoUrl={logoUrl} onBack={handleCloseAdmin} />
   }
 
   return (
@@ -647,16 +618,6 @@ function App() {
                       <span>Entradas a reservar:</span>
                       <b>{quantity} entrada{quantity > 1 ? 's' : ''} general{quantity > 1 ? 'es' : ''}</b>
                     </div>
-                  </div>
-
-                  <div className="form-field" style={{ marginTop: '18px' }}>
-                    <label>Número de comprobante / Referencia (Opcional):</label>
-                    <input
-                      type="text"
-                      placeholder="Ej: 98451230"
-                      value={transferRef}
-                      onChange={e => setTransferRef(e.target.value)}
-                    />
                   </div>
                 </div>
               </div>

@@ -9,6 +9,7 @@ import {
 import { supabase } from './lib/supabase'
 import { sendTicketsEmail } from './lib/email'
 import type { OrderConfirmation, IssuedTicket } from './types'
+import ClubLogo from './ClubLogo'
 import './admin.css'
 
 interface OrderRow {
@@ -44,7 +45,14 @@ interface ScanResult {
   buyerName?: string
 }
 
-export default function AdminPage({ onBack }: { onBack?: () => void }) {
+export default function AdminPage({
+  onBack,
+  logoUrl
+}: {
+  onBack?: () => void
+  logoUrl?: string | null
+}) {
+  const clubLogo = logoUrl || (import.meta.env.VITE_CLUB_LOGO_URL as string) || null
   // Autenticación exclusiva por Email y Contraseña (Supabase Auth)
   const [signedIn, setSignedIn] = useState(false)
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -203,11 +211,22 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
   // LÓGICA DEL ESCÁNER QR
   // ═════════════════════════════════════════════════════════════════
   async function startScanner() {
-    if (scannerActive) return
+    if (scannerActive || scannerStarting) return
     setScannerStarting(true)
     setScanResult(null)
+    setAuthError('')
 
     try {
+      // Detener previo si existiera
+      if (html5QrCodeRef.current) {
+        try {
+          if (html5QrCodeRef.current.isScanning) {
+            await html5QrCodeRef.current.stop()
+          }
+          await html5QrCodeRef.current.clear()
+        } catch {}
+      }
+
       const qrScanner = new Html5Qrcode('qr-reader-viewport')
       html5QrCodeRef.current = qrScanner
 
@@ -216,8 +235,12 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
       await qrScanner.start(
         cameraId,
         {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
+          fps: 15,
+          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+            const minEdge = Math.min(viewfinderWidth, viewfinderHeight)
+            const qrboxSize = Math.max(200, Math.floor(minEdge * 0.72))
+            return { width: qrboxSize, height: qrboxSize }
+          },
           aspectRatio: 1.0,
         },
         async (decodedText) => {
@@ -233,16 +256,25 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
     } catch (err) {
       console.error('Error al iniciar cámara:', err)
       setAuthError('No se pudo acceder a la cámara. Verificá los permisos del navegador.')
+      setScannerActive(false)
     } finally {
       setScannerStarting(false)
     }
   }
 
-  function stopScanner() {
-    if (html5QrCodeRef.current && scannerActive) {
-      html5QrCodeRef.current.stop().catch(e => console.warn(e))
-      html5QrCodeRef.current = null
-      setScannerActive(false)
+  async function stopScanner() {
+    if (html5QrCodeRef.current) {
+      try {
+        if (html5QrCodeRef.current.isScanning) {
+          await html5QrCodeRef.current.stop()
+        }
+        await html5QrCodeRef.current.clear()
+      } catch (e) {
+        console.warn('Error al detener escáner:', e)
+      } finally {
+        html5QrCodeRef.current = null
+        setScannerActive(false)
+      }
     }
   }
 
@@ -547,7 +579,7 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
       <main className="admin-wrap">
         <div className="admin-login">
           <div className="admin-header-logo">
-            <div className="admin-mark">AT<span>SC</span></div>
+            <ClubLogo url={clubLogo} size="md" />
             <div>
               <p className="admin-kicker">CONTROL DE ACCESO & ADMINISTRACIÓN</p>
               <h1>Panel de Control ATSC</h1>
@@ -649,7 +681,7 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
       {/* Header del Dashboard */}
       <header className="dashboard-header">
         <div className="dash-title-wrap">
-          <div className="dash-shield">AT<span>SC</span></div>
+          <ClubLogo url={clubLogo} size="sm" />
           <div>
             <div className="admin-kicker">ANDES TALLERES · CONTROL DE EVENTO</div>
             <h1>Cena de Fin de Año 2026</h1>
@@ -756,13 +788,39 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
               )}
 
               {/* Visor de la cámara */}
-              <div className="camera-viewport-wrap">
-                <div id="qr-reader-viewport" className="qr-viewport"></div>
+              <div className={`camera-viewport-wrap ${scannerActive ? 'scanner-is-active' : ''}`}>
+                <div
+                  id="qr-reader-viewport"
+                  className="qr-viewport"
+                  style={{ display: scannerActive ? 'block' : 'none' }}
+                ></div>
+
+                {scannerActive && (
+                  <div className="scanner-overlay">
+                    <div className="scanner-badge-live">
+                      <span className="pulse-dot"></span>
+                      EN VIVO · ESCANEANDO
+                    </div>
+                    <div className="scanner-reticle">
+                      <span className="scanner-corner corner-tl"></span>
+                      <span className="scanner-corner corner-tr"></span>
+                      <span className="scanner-corner corner-bl"></span>
+                      <span className="scanner-corner corner-br"></span>
+                      <span className="scanner-laser"></span>
+                    </div>
+                    <p className="scanner-guide-text">Centrá el código QR dentro del marco</p>
+                  </div>
+                )}
+
                 {!scannerActive && (
                   <div className="camera-placeholder">
-                    <Camera size={48} className="cam-icon" />
-                    <p>La cámara está apagada</p>
+                    <div className="cam-icon-circle">
+                      <Camera size={38} className="cam-icon" />
+                    </div>
+                    <p className="cam-status-title">La cámara está apagada</p>
+                    <p className="cam-status-sub">Activá el lector para validar entradas en puerta</p>
                     <button
+                      type="button"
                       className="btn-start-camera"
                       onClick={startScanner}
                       disabled={scannerStarting}
@@ -776,8 +834,8 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
               {/* Controles de cámara */}
               {scannerActive && (
                 <div className="camera-controls">
-                  <button className="btn-stop-camera" onClick={stopScanner}>
-                    Detener Cámara
+                  <button type="button" className="btn-stop-camera" onClick={stopScanner}>
+                    ⏹ Detener Cámara
                   </button>
                 </div>
               )}
