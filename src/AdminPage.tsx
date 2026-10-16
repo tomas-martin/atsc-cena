@@ -44,20 +44,16 @@ interface ScanResult {
   buyerName?: string
 }
 
-// PIN por defecto para el personal en puerta del club
-const ADMIN_QUICK_PIN = '2026'
-
 export default function AdminPage({ onBack }: { onBack?: () => void }) {
-  // Autenticación
+  // Autenticación exclusiva por Email y Contraseña (Supabase Auth)
   const [signedIn, setSignedIn] = useState(false)
-  const [pin, setPin] = useState('')
+  const [userEmail, setUserEmail] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [loginMethod, setLoginMethod] = useState<'pin' | 'auth'>('pin')
   const [authError, setAuthError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Tabs del panel: 'scanner' | 'tickets' | 'orders' | 'config'
+  // Tabs del panel: 'scanner' | 'tickets' | 'orders'
   const [activeTab, setActiveTab] = useState<'scanner' | 'tickets' | 'orders'>('scanner')
 
   // Datos
@@ -77,11 +73,26 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
   const [selectedCamera, setSelectedCamera] = useState<string>('')
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null)
 
-  // Cargar sesión guardada en localStorage
+  // Verificar sesión activa de Supabase Auth al montar
   useEffect(() => {
-    const savedPin = localStorage.getItem('atsc_admin_auth')
-    if (savedPin === 'true') {
-      setSignedIn(true)
+    if (!supabase) return
+
+    // Obtener sesión actual
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setSignedIn(true)
+        setUserEmail(session.user.email || null)
+      }
+    })
+
+    // Escuchar cambios de autenticación (login / logout)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSignedIn(!!session?.user)
+      setUserEmail(session?.user?.email || null)
+    })
+
+    return () => {
+      subscription.unsubscribe()
     }
   }, [])
 
@@ -148,42 +159,42 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
     setLoading(false)
   }
 
-  // Login con PIN
-  function handlePinLogin(e: React.FormEvent) {
-    e.preventDefault()
-    setAuthError('')
-    if (pin.trim() === ADMIN_QUICK_PIN) {
-      setSignedIn(true)
-      localStorage.setItem('atsc_admin_auth', 'true')
-    } else {
-      setAuthError('PIN incorrecto. El PIN por defecto es 2026.')
-    }
-  }
-
-  // Login con Supabase Auth
+  // Login exclusivo con Supabase Auth (Email y Contraseña)
   async function handleAuthLogin(e: React.FormEvent) {
     e.preventDefault()
     setAuthError('')
     if (!supabase) {
-      setAuthError('Supabase no está conectado.')
+      setAuthError('Supabase no está conectado. Verificá las variables de entorno.')
       return
     }
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    })
     setLoading(false)
+
     if (error) {
-      setAuthError('Credenciales incorrectas.')
-    } else {
+      if (error.message.includes('Invalid login credentials')) {
+        setAuthError('Correo o contraseña incorrectos. Verificá haber creado el usuario en Supabase.')
+      } else if (error.message.includes('Email not confirmed')) {
+        setAuthError('El correo aún no fue confirmado en Supabase (tildá "Auto Confirm User" al crearlo).')
+      } else {
+        setAuthError(error.message)
+      }
+    } else if (data.session?.user) {
       setSignedIn(true)
-      localStorage.setItem('atsc_admin_auth', 'true')
+      setUserEmail(data.session.user.email || null)
     }
   }
 
-  function handleSignOut() {
+  async function handleSignOut() {
     stopScanner()
-    localStorage.removeItem('atsc_admin_auth')
-    if (supabase) void supabase.auth.signOut()
+    if (supabase) {
+      await supabase.auth.signOut()
+    }
     setSignedIn(false)
+    setUserEmail(null)
     setOrders([])
     setTickets([])
   }
@@ -543,80 +554,44 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
             </div>
           </div>
 
-          <div className="login-tabs">
-            <button
-              type="button"
-              className={loginMethod === 'pin' ? 'active' : ''}
-              onClick={() => { setLoginMethod('pin'); setAuthError('') }}
-            >
-              PIN Rápido (Control en Puerta)
-            </button>
-            <button
-              type="button"
-              className={loginMethod === 'auth' ? 'active' : ''}
-              onClick={() => { setLoginMethod('auth'); setAuthError('') }}
-            >
-              Usuario / Clave Supabase
-            </button>
-          </div>
+          <form onSubmit={handleAuthLogin} className="login-form">
+            <label>
+              Correo Electrónico de Administrador
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                autoFocus
+                placeholder="tu-correo@gmail.com"
+              />
+            </label>
 
-          {loginMethod === 'pin' ? (
-            <form onSubmit={handlePinLogin} className="login-form">
-              <div style={{ background: 'rgba(217, 39, 54, 0.12)', border: '1px solid rgba(217, 39, 54, 0.35)', borderRadius: '8px', padding: '12px 14px', marginBottom: '16px', fontSize: '13px', color: '#c2cad7' }}>
-                <span style={{ color: '#ffffff', fontWeight: '700' }}>💡 Acceso directo sin registrarse:</span>
-                <p style={{ margin: '4px 0 0', fontSize: '12px', lineHeight: '1.4' }}>
-                  No necesitás crear ningún usuario previo en la base de datos. Ingresá directamente con el PIN predeterminado: <strong style={{ color: '#ff4d5a', fontSize: '14px', letterSpacing: '1px' }}>2026</strong>
-                </p>
-              </div>
+            <label>
+              Contraseña
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+              />
+            </label>
 
-              <label>
-                PIN de Acceso
-                <input
-                  type="password"
-                  inputMode="numeric"
-                  maxLength={6}
-                  value={pin}
-                  onChange={e => setPin(e.target.value)}
-                  placeholder="Ingresá 2026"
-                  autoFocus
-                  required
-                />
-              </label>
-              {authError && <p className="admin-error">{authError}</p>}
-              <button className="admin-primary">
-                <LockKeyhole size={16} /> Ingresar al Panel y Escáner
-              </button>
-              <p className="admin-hint">
-                Diseñado para acceder rápido desde el celular en el ingreso al microestadio.
-              </p>
-            </form>
-          ) : (
-            <form onSubmit={handleAuthLogin} className="login-form">
-              <label>
-                Correo Electrónico
-                <input
-                  type="email"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required
-                  placeholder="admin@andestalleres.com.ar"
-                />
-              </label>
-              <label>
-                Contraseña
-                <input
-                  type="password"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                />
-              </label>
-              {authError && <p className="admin-error">{authError}</p>}
-              <button className="admin-primary" disabled={loading}>
-                <LockKeyhole size={16} /> {loading ? 'Verificando...' : 'Iniciar Sesión'}
-              </button>
-            </form>
-          )}
+            {authError && <p className="admin-error">{authError}</p>}
+
+            <button className="admin-primary" disabled={loading} type="submit">
+              {loading ? (
+                <>
+                  <RefreshCw size={16} className="spinner" /> Verificando...
+                </>
+              ) : (
+                <>
+                  <LockKeyhole size={16} /> Iniciar Sesión como Administrador
+                </>
+              )}
+            </button>
+          </form>
 
           {onBack && (
             <button type="button" className="admin-back-btn" onClick={onBack}>
@@ -682,6 +657,11 @@ export default function AdminPage({ onBack }: { onBack?: () => void }) {
         </div>
 
         <div className="dash-top-actions">
+          {userEmail && (
+            <span style={{ fontSize: '12px', color: '#8a9ab5', padding: '6px 10px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }}>
+              👤 {userEmail}
+            </span>
+          )}
           {onBack && (
             <button className="btn-dash-outline" onClick={onBack}>
               <ArrowLeft size={14} /> Ir a la Web
