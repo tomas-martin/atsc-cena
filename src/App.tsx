@@ -241,7 +241,7 @@ function App() {
           buyer_email: buyer.email,
           buyer_phone: buyer.phone,
           quantity,
-          unit_price_ars: quantity > 0 ? Math.round(total / quantity) : 0,
+          unit_price_ars: unitPrice || (quantity > 0 ? Math.round(total / quantity) : 0),
           total_ars: total,
           payment_method: 'transferencia',
           status: isZeroCostOrder ? 'pagado' : 'pendiente',

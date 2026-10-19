@@ -29,8 +29,8 @@ create table public.orders (
   buyer_email text not null,
   buyer_phone text not null,
   quantity integer not null check (quantity between 1 and 10),
-  unit_price_ars integer not null check (unit_price_ars >= 0),
-  total_ars integer not null check (total_ars = quantity * unit_price_ars),
+  unit_price_ars integer not null default 0 check (unit_price_ars >= 0),
+  total_ars integer not null check (total_ars >= 0),
   payment_method public.payment_method not null,
   status public.order_status not null default 'pendiente',
   provider_preference_id text,
@@ -56,10 +56,12 @@ create index orders_status_created_idx on public.orders(status, created_at desc)
 create index tickets_order_id_idx on public.tickets(order_id);
 create index tickets_ticket_number_idx on public.tickets(ticket_number);
 
--- NOTA: Si ya tenías la base creada en Supabase, ejecutá estas líneas en el SQL Editor para habilitar jugadores sin sorteo y ventas con bonificación:
+-- NOTA: Si ya tenías la base creada en Supabase, ejecutá estas líneas en el SQL Editor para corregir restricciones de bonificaciones:
 -- alter table public.tickets add column if not exists ticket_number serial;
 -- alter table public.tickets alter column ticket_number drop not null;
+-- alter table public.orders drop constraint if exists orders_check;
 -- alter table public.orders drop constraint if exists orders_total_ars_check;
+-- alter table public.orders add constraint orders_total_ars_non_negative check (total_ars >= 0);
 
 -- Políticas de acceso para la venta y el panel de control:
 alter table public.event_config enable row level security;
