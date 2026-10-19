@@ -56,8 +56,10 @@ create index orders_status_created_idx on public.orders(status, created_at desc)
 create index tickets_order_id_idx on public.tickets(order_id);
 create index tickets_ticket_number_idx on public.tickets(ticket_number);
 
--- NOTA: Si ya tenías la tabla tickets creada en Supabase, ejecutá esta línea en el SQL Editor:
+-- NOTA: Si ya tenías la base creada en Supabase, ejecutá estas líneas en el SQL Editor para habilitar jugadores sin sorteo y ventas con bonificación:
 -- alter table public.tickets add column if not exists ticket_number serial;
+-- alter table public.tickets alter column ticket_number drop not null;
+-- alter table public.orders drop constraint if exists orders_total_ars_check;
 
 -- Políticas de acceso para la venta y el panel de control:
 alter table public.event_config enable row level security;

@@ -1895,3 +1895,437 @@ button {
   }
 }
 
+/* ══════════════════════════════════════════════════════════
+   ESTILOS PARA ASISTENTES: ROL (JUGADOR / ACOMPAÑANTE) Y CATEGORÍA
+   ══════════════════════════════════════════════════════════ */
+.attendee-details-container {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--navy-card-border);
+}
+
+.attendee-details-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.attendee-details-title-row h4 {
+  font-size: 15px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+  margin: 0;
+}
+
+.attendee-count-pill {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.attendee-cards-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.attendee-card-item {
+  background: rgba(6, 13, 23, 0.7);
+  border: 1px solid var(--navy-card-border);
+  border-radius: 8px;
+  padding: 18px 20px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.attendee-card-item:hover {
+  border-color: rgba(217, 39, 54, 0.4);
+}
+
+.attendee-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.attendee-tag-badge {
+  font-size: 12px;
+  font-weight: 800;
+  color: #ffffff;
+  background: rgba(217, 39, 54, 0.2);
+  border: 1px solid rgba(217, 39, 54, 0.4);
+  padding: 3px 10px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.attendee-type-indicator {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.indicator-jugador {
+  background: rgba(0, 210, 180, 0.12);
+  color: #00d2b4;
+  border: 1px solid rgba(0, 210, 180, 0.3);
+}
+
+.indicator-acompanante {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.attendee-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.attendee-step-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.attendee-field-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #cfd8e3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.role-selector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 600px) {
+  .role-selector-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.role-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(14, 26, 43, 0.7);
+  border: 1px solid var(--navy-card-border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+  color: var(--text-white);
+  position: relative;
+}
+
+.role-option-btn:hover {
+  background: rgba(20, 36, 60, 0.9);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.role-option-btn.selected.role-jugador {
+  background: rgba(0, 210, 180, 0.12);
+  border-color: #00d2b4;
+  box-shadow: 0 0 16px rgba(0, 210, 180, 0.2);
+}
+
+.role-option-btn.selected.role-acompanante {
+  background: rgba(217, 39, 54, 0.15);
+  border-color: var(--red-talleres);
+  box-shadow: 0 0 16px rgba(217, 39, 54, 0.25);
+}
+
+.role-opt-emoji {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.role-opt-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.role-opt-text strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.role-opt-text small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.role-check {
+  color: #00d2b4;
+  flex-shrink: 0;
+}
+
+.role-option-btn.role-acompanante .role-check {
+  color: var(--red-talleres);
+}
+
+.category-select-input {
+  height: 44px;
+  background: rgba(6, 13, 23, 0.85);
+  border: 1px solid var(--navy-card-border);
+  border-radius: 6px;
+  padding: 0 14px;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.category-select-input:focus {
+  border-color: var(--red-talleres);
+  box-shadow: 0 0 0 3px rgba(217, 39, 54, 0.2);
+}
+
+.category-select-input option {
+  background: #0b1726;
+  color: #ffffff;
+  padding: 8px;
+}
+
+.attendee-text-input {
+  height: 44px;
+  background: rgba(6, 13, 23, 0.85);
+  border: 1px solid var(--navy-card-border);
+  border-radius: 6px;
+  padding: 0 14px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.attendee-text-input:focus {
+  border-color: var(--red-talleres);
+  box-shadow: 0 0 0 3px rgba(217, 39, 54, 0.2);
+}
+
+/* Resumen de Tarifas y Desglose */
+.ticket-pricing-summary {
+  margin-top: 22px;
+  padding: 18px 20px;
+  background: rgba(6, 13, 23, 0.6);
+  border: 1px solid var(--navy-card-border);
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.summary-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.summary-breakdown-row strong {
+  color: #ffffff;
+}
+
+.summary-divider-line {
+  height: 1px;
+  background: var(--navy-card-border);
+  margin: 6px 0;
+}
+
+.summary-total-calc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #ffffff;
+}
+
+.total-amount-highlight {
+  font-family: 'Oswald', sans-serif;
+  font-size: 28px;
+  color: var(--red-talleres);
+}
+
+.raffle-disclaimer-note {
+  font-size: 11px;
+  color: #8a9ab5;
+  margin: 6px 0 0;
+  line-height: 1.45;
+}
+
+/* Tarjeta especial para órdenes de $0 (solo jugadores) */
+.zero-cost-banner-card {
+  background: linear-gradient(135deg, rgba(0, 210, 180, 0.12) 0%, rgba(11, 23, 38, 0.95) 100%);
+  border: 1px solid rgba(0, 210, 180, 0.4);
+}
+
+.zero-icon-pill {
+  display: inline-block;
+  background: rgba(0, 210, 180, 0.2);
+  color: #00d2b4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(0, 210, 180, 0.35);
+}
+
+/* Banner de confirmación para órdenes gratuitas */
+.confirmed-success-banner {
+  text-align: center;
+  background: rgba(0, 210, 180, 0.08);
+  border: 1px solid rgba(0, 210, 180, 0.35);
+  border-radius: 12px;
+  padding: 36px 24px;
+  margin-bottom: 24px;
+}
+
+.confirmed-icon-wrap {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(0, 210, 180, 0.15);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 16px;
+  border: 1px solid rgba(0, 210, 180, 0.4);
+}
+
+.status-badge-free {
+  display: inline-block;
+  background: rgba(0, 210, 180, 0.2);
+  color: #00d2b4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.5px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-bottom: 12px;
+}
+
+.confirmed-success-banner h1 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 32px;
+  color: #ffffff;
+  margin: 0 0 10px;
+}
+
+.confirmed-success-banner p {
+  color: var(--text-muted);
+  max-width: 540px;
+  margin: 0 auto;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* Grilla de Entradas Confirmadas */
+.confirmation-tickets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.conf-ticket-card {
+  background: rgba(6, 13, 23, 0.8);
+  border: 1px solid var(--navy-card-border);
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.conf-ticket-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.badge-player-pill {
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(0, 210, 180, 0.15);
+  color: #00d2b4;
+  border: 1px solid rgba(0, 210, 180, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.badge-raffle-pill {
+  font-size: 11px;
+  font-weight: 800;
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.conf-club-tag {
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--red-talleres);
+}
+
+.conf-ticket-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 4px;
+}
+
+.conf-ticket-event {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.conf-qr-display {
+  margin-top: 10px;
+  text-align: center;
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.conf-qr-img {
+  width: 160px;
+  height: 160px;
+  display: block;
+  margin: 0 auto;
+}
+
+.conf-qr-token {
+  display: block;
+  font-family: monospace;
+  font-size: 10px;
+  color: #1a2d47;
+  font-weight: bold;
+  margin-top: 4px;
+}
+
+

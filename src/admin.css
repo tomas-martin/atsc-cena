@@ -1254,3 +1254,421 @@
     padding: 24px 16px;
   }
 }
+
+/* ══════════════════════════════════════════════════════════
+   ESTILOS PANEL ADMIN: BOTONES Y BADGES DE JUGADOR
+   ══════════════════════════════════════════════════════════ */
+.btn-dash-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--red-talleres, #d92736);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(217, 39, 54, 0.4);
+}
+
+.btn-dash-primary:hover {
+  background: #ff3344;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(217, 39, 54, 0.6);
+}
+
+.tab-presencial-highlight.active {
+  border-color: #00d2b4 !important;
+  color: #00d2b4 !important;
+  box-shadow: 0 0 16px rgba(0, 210, 180, 0.25);
+}
+
+.ticket-badge-player {
+  display: inline-block;
+  background: rgba(0, 210, 180, 0.12);
+  color: #00d2b4;
+  border: 1px solid rgba(0, 210, 180, 0.35);
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+
+/* ══════════════════════════════════════════════════════════
+   SECCIÓN: VENTA PRESENCIAL EN PUERTA
+   ══════════════════════════════════════════════════════════ */
+.presencial-section {
+  max-width: 960px;
+  margin: 0 auto;
+  padding-bottom: 60px;
+}
+
+.presencial-container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.presencial-form-card {
+  background: #0b1726;
+  border: 1px solid #1a2d47;
+  border-radius: 12px;
+  padding: 28px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+
+.pres-card-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #1a2d47;
+}
+
+.pres-card-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  background: rgba(0, 210, 180, 0.15);
+  color: #00d2b4;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 210, 180, 0.3);
+}
+
+.pres-card-header h2 {
+  font-size: 20px;
+  color: #ffffff;
+  margin: 0 0 4px;
+  font-weight: 800;
+}
+
+.pres-card-header p {
+  font-size: 13px;
+  color: #8a9ab5;
+  margin: 0;
+}
+
+.pres-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.pres-section-block {
+  background: rgba(6, 13, 23, 0.6);
+  border: 1px solid #1a2d47;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.pres-section-block h3 {
+  font-size: 15px;
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0 0 16px;
+  letter-spacing: 0.5px;
+}
+
+.pres-qty-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.pres-attendees-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pres-attendee-item-card {
+  background: #0f1c2e;
+  border: 1px solid #1a2d47;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.pres-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pres-item-fields-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1.2fr;
+  gap: 14px;
+}
+
+@media (max-width: 820px) {
+  .pres-item-fields-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pres-field-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pres-field-col label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #cfd8e3;
+}
+
+.pres-payment-method-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.pres-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #cfd8e3;
+}
+
+.payment-method-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.method-pill {
+  background: rgba(14, 26, 43, 0.8);
+  border: 1px solid #1a2d47;
+  color: #ffffff;
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.method-pill:hover {
+  background: rgba(20, 36, 60, 0.9);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.method-pill.selected {
+  background: rgba(0, 210, 180, 0.15);
+  border-color: #00d2b4;
+  color: #00d2b4;
+  box-shadow: 0 0 12px rgba(0, 210, 180, 0.2);
+}
+
+.pres-checkin-option {
+  padding-top: 12px;
+  border-top: 1px dashed #1a2d47;
+}
+
+.checkbox-custom-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 13px;
+  color: #c2cad7;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.checkbox-custom-label input {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  accent-color: #00d2b4;
+  cursor: pointer;
+}
+
+.pres-summary-box {
+  background: #070e1a;
+  border: 1px solid #1a2d47;
+  border-radius: 8px;
+  padding: 18px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pres-form-actions {
+  margin-top: 10px;
+}
+
+/* Tarjeta de Confirmación de Venta Presencial */
+.presencial-success-card {
+  background: #0b1726;
+  border: 1px solid rgba(0, 210, 180, 0.4);
+  border-radius: 12px;
+  padding: 30px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+}
+
+.pres-success-header {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #1a2d47;
+}
+
+.pres-success-icon-wrap {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(0, 210, 180, 0.15);
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(0, 210, 180, 0.35);
+  flex-shrink: 0;
+}
+
+.pres-success-pill {
+  display: inline-block;
+  background: rgba(0, 210, 180, 0.2);
+  color: #00d2b4;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1.2px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  margin-bottom: 6px;
+}
+
+.pres-success-header h2 {
+  font-size: 24px;
+  color: #ffffff;
+  margin: 0 0 4px;
+}
+
+.pres-success-header p {
+  color: #8a9ab5;
+  margin: 0;
+  font-size: 14px;
+}
+
+.pres-email-status-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.status-email-ok,
+.status-checkin-ok {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(0, 210, 180, 0.1);
+  border: 1px solid rgba(0, 210, 180, 0.3);
+  color: #ffffff;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.status-email-ok svg,
+.status-checkin-ok svg {
+  color: #00d2b4;
+  flex-shrink: 0;
+}
+
+.status-email-warn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #fbbf24;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.status-email-warn svg {
+  flex-shrink: 0;
+}
+
+.pres-issued-qr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 26px;
+}
+
+.pres-qr-card {
+  background: #0f1c2e;
+  border: 1px solid #1a2d47;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pres-qr-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pres-club-tag {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--red-talleres, #d92736);
+}
+
+.pres-qr-name {
+  font-size: 13px;
+  color: #ffffff;
+}
+
+.pres-qr-img-wrap {
+  background: #ffffff;
+  border-radius: 6px;
+  padding: 12px;
+  text-align: center;
+  margin-top: 6px;
+}
+
+.pres-qr-img-wrap img {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.pres-qr-token {
+  font-family: monospace;
+  font-size: 10px;
+  color: #586a85;
+  text-align: center;
+}
+
+.pres-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.btn-big {
+  padding: 12px 22px;
+  font-size: 14px;
+}

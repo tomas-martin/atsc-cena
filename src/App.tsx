@@ -3,16 +3,23 @@ import {
   ArrowRight, ArrowLeft, CircleHelp,
   Minus, Plus, ShieldCheck, Ticket,
   WalletCards, Calendar, MapPin, Users,
-  RefreshCw, Check, Copy, MessageCircle, AlertCircle
+  RefreshCw, Check, Copy, MessageCircle, AlertCircle,
+  CheckCircle2, Sparkles
 } from 'lucide-react'
+import QRCode from 'qrcode'
 import { supabase } from './lib/supabase'
+import { sendTicketsEmail } from './lib/email'
 import AdminPage from './AdminPage'
 import ClubLogo from './ClubLogo'
 import {
   type BuyerDetails,
   type Step,
   type IssuedTicket,
-  type OrderConfirmation
+  type OrderConfirmation,
+  type AttendeeRole,
+  type Category,
+  type AttendeeDetail,
+  CATEGORIES
 } from './types'
 
 // Precio base de referencia por entrada en ARS (si Supabase no define otro)
@@ -73,7 +80,14 @@ function App() {
     dni: '',
     email: '',
     phone: '',
-    attendees: ['']
+    attendees: [''],
+    attendeeDetails: [
+      {
+        name: '',
+        role: 'jugador',
+        category: 'Primera'
+      }
+    ]
   })
 
   // Pago: Exclusivo Transferencia por Alias
@@ -83,8 +97,21 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
   const [orderConfirmation, setOrderConfirmation] = useState<OrderConfirmation | null>(null)
+  const [confirmationQrUrls, setConfirmationQrUrls] = useState<Record<string, string>>({})
 
-  const total = useMemo(() => unitPrice * quantity, [unitPrice, quantity])
+  // Conteo de acompañantes y jugadores
+  const companionCount = useMemo(() => {
+    return (buyer.attendeeDetails || []).filter(a => a.role === 'acompanante').length
+  }, [buyer.attendeeDetails])
+
+  const playerCount = useMemo(() => {
+    return (buyer.attendeeDetails || []).filter(a => a.role === 'jugador').length
+  }, [buyer.attendeeDetails])
+
+  // Solo pagan los acompañantes; jugadores tienen costo $0
+  const total = useMemo(() => {
+    return companionCount * unitPrice
+  }, [companionCount, unitPrice])
 
   // Cargar precio y logo desde Supabase si existen
   useEffect(() => {
@@ -113,32 +140,44 @@ function App() {
   // Sincronizar array de asistentes con la cantidad seleccionada
   useEffect(() => {
     setBuyer(prev => {
-      const currentList = prev.attendees || []
-      const newList = Array.from({ length: quantity }, (_, idx) => {
-        if (idx === 0) return currentList[0] || prev.fullName
-        return currentList[idx] || ''
+      const curDetails = prev.attendeeDetails || []
+      const newDetails: AttendeeDetail[] = Array.from({ length: quantity }, (_, idx) => {
+        if (curDetails[idx]) return curDetails[idx]
+        return {
+          name: idx === 0 ? prev.fullName : '',
+          role: idx === 0 ? 'jugador' : 'acompanante',
+          category: curDetails[0]?.category || 'Primera'
+        }
       })
-      return { ...prev, attendees: newList }
+      const attendeesList = newDetails.map(d =>
+        d.name ? `${d.name} (${d.role === 'jugador' ? 'Jugador' : 'Acompañante'} · ${d.category})` : ''
+      )
+      return { ...prev, attendeeDetails: newDetails, attendees: attendeesList }
     })
   }, [quantity])
 
   const updateBuyer = (field: keyof BuyerDetails, value: string) => {
     setBuyer(current => {
       const updated = { ...current, [field]: value }
-      if (field === 'fullName' && (!updated.attendees || !updated.attendees[0] || updated.attendees[0] === current.fullName)) {
-        const att = [...(updated.attendees || [])]
-        att[0] = value
-        updated.attendees = att
+      if (field === 'fullName') {
+        const details = [...(current.attendeeDetails || [])]
+        if (details[0] && (!details[0].name || details[0].name === current.fullName)) {
+          details[0] = { ...details[0], name: value }
+          updated.attendeeDetails = details
+        }
       }
       return updated
     })
   }
 
-  const updateAttendee = (index: number, name: string) => {
-    setBuyer(current => {
-      const list = [...(current.attendees || [])]
-      list[index] = name
-      return { ...current, attendees: list }
+  const updateAttendeeDetail = (index: number, updates: Partial<AttendeeDetail>) => {
+    setBuyer(prev => {
+      const list = [...(prev.attendeeDetails || [])]
+      list[index] = { ...list[index], ...updates }
+      const attendeesList = list.map(d =>
+        d.name ? `${d.name} (${d.role === 'jugador' ? 'Jugador' : 'Acompañante'} · ${d.category})` : ''
+      )
+      return { ...prev, attendeeDetails: list, attendees: attendeesList }
     })
   }
 
@@ -167,19 +206,34 @@ function App() {
       return
     }
 
+    // Validar datos de cada entrada
+    for (let i = 0; i < quantity; i++) {
+      const det = buyer.attendeeDetails?.[i]
+      const effName = det?.name?.trim() || (i === 0 ? buyer.fullName.trim() : '')
+      if (!effName) {
+        setErrorMessage(`Por favor completá el nombre del asistente en la Entrada #${i + 1}.`)
+        return
+      }
+      if (!det?.category) {
+        setErrorMessage(`Por favor seleccioná la categoría para la Entrada #${i + 1}.`)
+        return
+      }
+    }
+
     setCurrentStep('pago')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  // ── Registro del pedido pendiente de confirmación ──
+  // ── Registro del pedido (pendiente si hay acompañantes, pagado directo si son solo jugadores) ──
   const handleRegisterOrder = async () => {
     setErrorMessage('')
     setBusy(true)
 
     try {
       let savedOrderId = ''
+      const isZeroCostOrder = total === 0
 
-      // 1. Guardar pedido en Supabase con estado PENDIENTE
+      // 1. Guardar pedido en Supabase
       if (supabase) {
         const { data: orderData, error: orderErr } = await supabase.from('orders').insert({
           buyer_full_name: buyer.fullName,
@@ -187,11 +241,12 @@ function App() {
           buyer_email: buyer.email,
           buyer_phone: buyer.phone,
           quantity,
-          unit_price_ars: unitPrice,
+          unit_price_ars: quantity > 0 ? Math.round(total / quantity) : 0,
           total_ars: total,
           payment_method: 'transferencia',
-          status: 'pendiente',
-          transfer_reference: null,
+          status: isZeroCostOrder ? 'pagado' : 'pendiente',
+          transfer_reference: isZeroCostOrder ? 'Entrada Jugador Bonificada ($0)' : null,
+          paid_at: isZeroCostOrder ? new Date().toISOString() : null,
         }).select('id').single()
 
         if (orderErr) {
@@ -209,21 +264,47 @@ function App() {
         ? `ATSC-${savedOrderId.slice(0, 6).toUpperCase()}`
         : `ATSC-${Math.floor(100000 + Math.random() * 900000)}`
 
-      // 2. Determinar número de entrada correlativo para el sorteo
+      // 2. Determinar número correlativo de sorteo (ÚNICAMENTE para acompañantes)
       let nextTicketNumber = 1
       if (supabase) {
         try {
-          const { count } = await supabase.from('tickets').select('*', { count: 'exact', head: true })
-          if (typeof count === 'number' && !isNaN(count)) {
-            nextTicketNumber = count + 1
+          const { data: highestTicket } = await supabase
+            .from('tickets')
+            .select('ticket_number')
+            .not('ticket_number', 'is', null)
+            .order('ticket_number', { ascending: false })
+            .limit(1)
+
+          if (highestTicket && highestTicket.length > 0 && typeof highestTicket[0].ticket_number === 'number') {
+            nextTicketNumber = highestTicket[0].ticket_number + 1
+          } else {
+            const { count } = await supabase.from('tickets').select('*', { count: 'exact', head: true })
+            if (typeof count === 'number' && !isNaN(count)) {
+              nextTicketNumber = count + 1
+            }
           }
         } catch { }
       }
 
-      // Generar tickets con números limpios y correlativos (ej: 001, 002...)
+      // 3. Generar tickets:
+      // - Jugadores: NO tienen número de sorteo (ticketNumber: 'JUGADOR', DB ticket_number: null)
+      // - Acompañantes: SÍ tienen número correlativo de sorteo (ej: 001, 002...)
+      let companionRaffleCount = 0
       const tickets: IssuedTicket[] = Array.from({ length: quantity }, (_, i) => {
-        const currentNum = nextTicketNumber + i
-        const formattedNum = String(currentNum).padStart(3, '0')
+        const detail = buyer.attendeeDetails?.[i] || {
+          name: i === 0 ? buyer.fullName : `Asistente ${i + 1}`,
+          role: (i === 0 ? 'jugador' : 'acompanante') as AttendeeRole,
+          category: 'Primera' as Category,
+        }
+
+        const isPlayer = detail.role === 'jugador'
+        let formattedNum = 'JUGADOR'
+        if (!isPlayer) {
+          const currentNum = nextTicketNumber + companionRaffleCount
+          formattedNum = String(currentNum).padStart(3, '0')
+          companionRaffleCount++
+        }
+
         const uuidToken = (typeof crypto !== 'undefined' && crypto.randomUUID)
           ? crypto.randomUUID()
           : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -232,35 +313,79 @@ function App() {
             return v.toString(16)
           })
 
-        const attendeeName = (buyer.attendees && buyer.attendees[i] && buyer.attendees[i].trim())
-          ? buyer.attendees[i].trim()
-          : (i === 0 ? buyer.fullName : `Acompañante ${i + 1}`)
+        const rawName = (detail.name && detail.name.trim())
+          ? detail.name.trim()
+          : (i === 0 ? buyer.fullName : `Asistente ${i + 1}`)
+
+        const formattedAttendeeName = `${rawName} (${isPlayer ? 'Jugador' : 'Acompañante'} · ${detail.category})`
 
         return {
           ticketNumber: formattedNum,
-          attendeeName,
+          attendeeName: formattedAttendeeName,
           qrToken: uuidToken,
           orderId: displayOrderId,
           eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
           date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Andes Talleres· Godoy Cruz, Mendoza',
+          venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
+          isPlayer,
+          role: detail.role,
+          category: detail.category,
         }
       })
 
-      // 3. Guardar tickets en Supabase
+      // 4. Guardar tickets en Supabase
       if (supabase && savedOrderId) {
-        const ticketRows = tickets.map((t, idx) => ({
+        const ticketRows = tickets.map((t) => ({
           order_id: savedOrderId,
           attendee_name: t.attendeeName,
           qr_token: t.qrToken,
           status: 'valid',
-          ticket_number: nextTicketNumber + idx,
+          ticket_number: t.isPlayer ? null : parseInt(t.ticketNumber, 10),
         }))
         const { error: ticketErr } = await supabase.from('tickets').insert(ticketRows)
         if (ticketErr) {
-          // Si la columna ticket_number todavía no fue creada en Supabase, reintentar sin ella
+          // Si ticket_number tiene restricción o no fue creado aún, reintentar sin él
           const fallbackRows = ticketRows.map(({ ticket_number, ...rest }) => rest)
           await supabase.from('tickets').insert(fallbackRows)
+        }
+      }
+
+      // 5. Si la orden es 100% de jugadores ($0), generar QR y despachar correo inmediatamente
+      let generatedQrs: Record<string, string> = {}
+      let emailDispatched = false
+      if (isZeroCostOrder) {
+        try {
+          for (const t of tickets) {
+            const qrContent = JSON.stringify({
+              app: 'ATSC-CENA-2026',
+              ticket: t.ticketNumber,
+              attendee: t.attendeeName,
+              token: t.qrToken,
+              order: t.orderId
+            })
+            const dataUrl = await QRCode.toDataURL(qrContent, {
+              width: 320,
+              margin: 2,
+              color: { dark: '#070e1a', light: '#ffffff' }
+            })
+            generatedQrs[t.qrToken] = dataUrl
+          }
+          setConfirmationQrUrls(generatedQrs)
+
+          const instantConf: OrderConfirmation = {
+            orderId: displayOrderId,
+            buyer,
+            quantity,
+            totalArs: 0,
+            paymentMethod: 'transferencia',
+            tickets,
+            emailSent: false,
+          }
+
+          const mailRes = await sendTicketsEmail(instantConf, generatedQrs)
+          emailDispatched = mailRes.success
+        } catch (e) {
+          console.warn('No se pudo enviar el correo de entradas gratis de forma inmediata:', e)
         }
       }
 
@@ -271,11 +396,11 @@ function App() {
         totalArs: total,
         paymentMethod: 'transferencia',
         tickets,
-        emailSent: false,
+        emailSent: emailDispatched,
       }
       setOrderConfirmation(conf)
 
-      // Pasar a la pantalla de confirmación pendiente y envío de WhatsApp
+      // Pasar a la pantalla de confirmación
       setCurrentStep('confirmacion')
       window.scrollTo({ top: 0, behavior: 'smooth' })
 
@@ -370,7 +495,7 @@ function App() {
                 <div className="info-divider" />
                 <div className="info-item">
                   <MapPin size={18} />
-                  <span>Microestadio Andes Talleres · Godoy Cruz</span>
+                  <span>Andes Talleres · Godoy Cruz</span>
                 </div>
                 <div className="info-divider" />
                 <div className="info-item">
@@ -407,7 +532,7 @@ function App() {
               </button>
               <div className="step-badge">PASO 2 DE 3</div>
               <h1>Seleccioná tus entradas y completá tus datos</h1>
-              <p>Elegí la cantidad de entradas e ingresá el correo donde recibirás los códigos QR tras confirmar el pago.</p>
+              <p>Indicá si cada persona es Jugador o Acompañante y su categoría. Las entradas de jugadores son gratuitas y no participan del sorteo.</p>
             </div>
 
             <form onSubmit={handleProceedToPayment} className="form-container">
@@ -424,8 +549,11 @@ function App() {
 
                 <div className="ticket-counter-box">
                   <div className="counter-info">
-                    <strong>Precio por persona:</strong>
+                    <strong>Tarifa acompañantes:</strong>
                     <span className="price-big">{money(unitPrice)}</span>
+                    <small style={{ color: '#00d2b4', display: 'block', marginTop: '4px', fontWeight: 'bold' }}>
+                      ⚽ Jugadores: ¡GRATIS! ($0)
+                    </small>
                   </div>
 
                   <div className="stepper-modern">
@@ -449,19 +577,136 @@ function App() {
                   </div>
                 </div>
 
-                <div className="ticket-total-calc">
-                  <span>Total a pagar ({quantity} entrada{quantity > 1 ? 's' : ''}):</span>
-                  <strong>{money(total)}</strong>
+                {/* Lista de selección de cada asistente: Rol y Categoría */}
+                <div className="attendee-details-container">
+                  <div className="attendee-details-title-row">
+                    <h4><Users size={18} /> Tipo de Asistente y Categoría por Entrada</h4>
+                    <span className="attendee-count-pill">{quantity} persona{quantity > 1 ? 's' : ''}</span>
+                  </div>
+
+                  <div className="attendee-cards-list">
+                    {Array.from({ length: quantity }).map((_, idx) => {
+                      const detail = buyer.attendeeDetails?.[idx] || {
+                        name: '',
+                        role: 'jugador' as AttendeeRole,
+                        category: 'Primera' as Category,
+                      }
+
+                      return (
+                        <div key={idx} className="attendee-card-item">
+                          <div className="attendee-card-header">
+                            <span className="attendee-tag-badge">Entrada #{idx + 1}</span>
+                            <span className={`attendee-type-indicator ${detail.role === 'jugador' ? 'indicator-jugador' : 'indicator-acompanante'}`}>
+                              {detail.role === 'jugador' ? '⚽ Jugador · $0 (Sin sorteo)' : `🎟️ Acompañante · ${money(unitPrice)} (Con sorteo)`}
+                            </span>
+                          </div>
+
+                          <div className="attendee-card-body">
+                            {/* 1. Selección primero: Jugador o Acompañante */}
+                            <div className="attendee-step-field">
+                              <label className="attendee-field-label">
+                                <b>1. ¿Quién asiste con esta entrada? *</b>
+                              </label>
+                              <div className="role-selector-grid">
+                                <button
+                                  type="button"
+                                  className={`role-option-btn ${detail.role === 'jugador' ? 'selected role-jugador' : ''}`}
+                                  onClick={() => updateAttendeeDetail(idx, { role: 'jugador' })}
+                                >
+                                  <span className="role-opt-emoji">⚽</span>
+                                  <div className="role-opt-text">
+                                    <strong>Jugador del Club</strong>
+                                    <small>Entrada gratis · No participa del sorteo</small>
+                                  </div>
+                                  {detail.role === 'jugador' && <Check size={16} className="role-check" />}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  className={`role-option-btn ${detail.role === 'acompanante' ? 'selected role-acompanante' : ''}`}
+                                  onClick={() => updateAttendeeDetail(idx, { role: 'acompanante' })}
+                                >
+                                  <span className="role-opt-emoji">🎟️</span>
+                                  <div className="role-opt-text">
+                                    <strong>Acompañante</strong>
+                                    <small>{money(unitPrice)} · Incluye N° para sorteo</small>
+                                  </div>
+                                  {detail.role === 'acompanante' && <Check size={16} className="role-check" />}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* 2. Selección de Categoría */}
+                            <div className="attendee-step-field">
+                              <label className="attendee-field-label">
+                                <b>2. Categoría *</b>
+                                <small style={{ color: '#8a9ab5' }}>Seleccioná la división o categoría</small>
+                              </label>
+                              <select
+                                className="category-select-input"
+                                value={detail.category}
+                                onChange={e => updateAttendeeDetail(idx, { category: e.target.value as Category })}
+                                required
+                              >
+                                {CATEGORIES.map(cat => (
+                                  <option key={cat} value={cat}>
+                                    Categoría {cat}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* 3. Nombre del asistente */}
+                            <div className="attendee-step-field">
+                              <label className="attendee-field-label">
+                                <b>3. Nombre y Apellido del Asistente *</b>
+                              </label>
+                              <input
+                                type="text"
+                                className="attendee-text-input"
+                                required
+                                placeholder={idx === 0 ? (buyer.fullName || 'Nombre y Apellido') : `Nombre y Apellido Entrada #${idx + 1}`}
+                                value={detail.name}
+                                onChange={e => updateAttendeeDetail(idx, { name: e.target.value })}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Resumen de cobro en base a roles */}
+                <div className="ticket-pricing-summary">
+                  <div className="summary-breakdown-row">
+                    <span>⚽ Jugadores ({playerCount}):</span>
+                    <strong className="text-green">¡GRATIS! ($0)</strong>
+                  </div>
+                  <div className="summary-breakdown-row">
+                    <span>🎟️ Acompañantes ({companionCount}):</span>
+                    <strong>{money(companionCount * unitPrice)}</strong>
+                  </div>
+                  <div className="summary-divider-line" />
+                  <div className="summary-total-calc-row">
+                    <span>Total a pagar ({quantity} entrada{quantity > 1 ? 's' : ''}):</span>
+                    <strong className="total-amount-highlight">{money(total)}</strong>
+                  </div>
+                  {playerCount > 0 && (
+                    <p className="raffle-disclaimer-note">
+                      ℹ️ Las entradas de <b>Jugadores</b> no tienen costo y no participan en el sorteo de premios. Las entradas de <b>Acompañantes</b> cuentan con número oficial para el sorteo.
+                    </p>
+                  )}
                 </div>
               </div>
 
-              {/* Datos del Comprador */}
+              {/* Datos del Comprador / Titular del Pedido */}
               <div className="dark-card">
                 <div className="card-top-header">
                   <div className="card-icon-round"><WalletCards size={20} /></div>
                   <div>
-                    <h3>Datos del Comprador</h3>
-                    <p>Titular de la reserva</p>
+                    <h3>Datos de Contacto del Titular</h3>
+                    <p>Persona responsable del pedido y recepción de las entradas</p>
                   </div>
                 </div>
 
@@ -512,30 +757,9 @@ function App() {
                       value={buyer.email}
                       onChange={e => updateBuyer('email', e.target.value)}
                     />
-                    <small className="field-hint">Asegurate de escribirlo correctamente. Una vez confirmada la transferencia, te llegará el email con las entradas y códigos QR.</small>
+                    <small className="field-hint">Asegurate de escribirlo correctamente. Te enviaremos el correo con las entradas y códigos QR a esta casilla.</small>
                   </div>
                 </div>
-
-                {/* Si compró más de 1 entrada, nombres opcionales */}
-                {quantity > 1 && (
-                  <div className="attendees-box">
-                    <h4><Users size={16} /> Nombres de los asistentes en cada entrada:</h4>
-                    <p className="attendees-desc">Podés personalizar el nombre que aparecerá en cada ticket digital.</p>
-                    <div className="attendees-list">
-                      {Array.from({ length: quantity }).map((_, idx) => (
-                        <div key={idx} className="attendee-row">
-                          <span className="att-num">Entrada #{idx + 1}</span>
-                          <input
-                            type="text"
-                            placeholder={idx === 0 ? (buyer.fullName || 'Titular') : `Nombre y Apellido Asistente ${idx + 1}`}
-                            value={buyer.attendees?.[idx] ?? ''}
-                            onChange={e => updateAttendee(idx, e.target.value)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {errorMessage && (
@@ -550,8 +774,17 @@ function App() {
                   <ArrowLeft size={16} /> Volver
                 </button>
                 <button type="submit" className="btn-huge-red">
-                  <span>CONTINUAR AL PAGO POR ALIAS</span>
-                  <ArrowRight size={18} />
+                  {total > 0 ? (
+                    <>
+                      <span>CONTINUAR AL PAGO POR ALIAS ({money(total)})</span>
+                      <ArrowRight size={18} />
+                    </>
+                  ) : (
+                    <>
+                      <span>CONTINUAR A CONFIRMAR REGISTRO GRATUITO ($0)</span>
+                      <ArrowRight size={18} />
+                    </>
+                  )}
                 </button>
               </div>
             </form>
@@ -559,7 +792,7 @@ function App() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            SECCIÓN 3: PAGO EXCLUSIVO POR TRANSFERENCIA DE ALIAS
+            SECCIÓN 3: PAGO O CONFIRMACIÓN DIRECTA (SI TOTAL $0)
            ══════════════════════════════════════════════════════════════ */}
         {currentStep === 'pago' && (
           <section className="step-section animate-fade">
@@ -567,66 +800,92 @@ function App() {
               <button className="btn-back" onClick={() => setCurrentStep('entradas_datos')}>
                 <ArrowLeft size={16} /> Modificar datos o cantidad
               </button>
-              <div className="step-badge">PASO 3 DE 3 · TRANSFERENCIA POR ALIAS</div>
-              <h1>Transferí al alias oficial del club</h1>
-              <p>Copiá el alias, hacé la transferencia desde tu banco o billetera virtual, y al confirmar te habilitará el envío del comprobante por WhatsApp.</p>
+              <div className="step-badge">
+                {total > 0 ? 'PASO 3 DE 3 · TRANSFERENCIA POR ALIAS' : 'PASO 3 DE 3 · CONFIRMACIÓN BONIFICADA'}
+              </div>
+              <h1>
+                {total > 0 ? 'Transferí al alias oficial del club' : 'Entradas de Jugador 100% Bonificadas'}
+              </h1>
+              <p>
+                {total > 0
+                  ? 'Copiá el alias, hacé la transferencia desde tu banco o billetera virtual, y al confirmar te habilitará el envío del comprobante por WhatsApp.'
+                  : 'Tus entradas corresponden a Jugadores del Club y no tienen costo. Confirmá para recibir tus códigos QR al instante por correo.'}
+              </p>
             </div>
 
             <div className="payment-grid-layout">
-              {/* Tarjeta de Transferencia por Alias */}
-              <div className="payment-options-col">
-                <div className="dark-card alias-main-card">
-                  <div className="alias-badge-header">
-                    <span className="alias-pill">PAGO OFICIAL ATSC</span>
-                    <span className="alias-only-note">Medio de pago único</span>
-                  </div>
+              {total > 0 ? (
+                /* Tarjeta de Transferencia por Alias para Acompañantes */
+                <div className="payment-options-col">
+                  <div className="dark-card alias-main-card">
+                    <div className="alias-badge-header">
+                      <span className="alias-pill">PAGO OFICIAL ATSC</span>
+                      <span className="alias-only-note">Medio de pago único</span>
+                    </div>
 
-                  <h3 className="alias-box-title">Datos para transferir:</h3>
+                    <h3 className="alias-box-title">Datos para transferir:</h3>
 
-                  {/* Caja destacada del Alias */}
-                  <div className="alias-highlight-box">
-                    <div className="alias-info-col">
-                      <small>ALIAS BANCARIO OFICIAL:</small>
-                      <strong className="alias-code">{CLUB_ALIAS}</strong>
+                    {/* Caja destacada del Alias */}
+                    <div className="alias-highlight-box">
+                      <div className="alias-info-col">
+                        <small>ALIAS BANCARIO OFICIAL:</small>
+                        <strong className="alias-code">{CLUB_ALIAS}</strong>
+                      </div>
+                      <button
+                        type="button"
+                        className={`btn-copy-alias ${copiedAlias ? 'copied' : ''}`}
+                        onClick={handleCopyAlias}
+                      >
+                        {copiedAlias ? (
+                          <>
+                            <Check size={16} /> ¡COPIADO!
+                          </>
+                        ) : (
+                          <>
+                            <Copy size={16} /> COPIAR ALIAS
+                          </>
+                        )}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className={`btn-copy-alias ${copiedAlias ? 'copied' : ''}`}
-                      onClick={handleCopyAlias}
-                    >
-                      {copiedAlias ? (
-                        <>
-                          <Check size={16} /> ¡COPIADO!
-                        </>
-                      ) : (
-                        <>
-                          <Copy size={16} /> COPIAR ALIAS
-                        </>
-                      )}
-                    </button>
-                  </div>
 
-                  {/* Detalles bancarios */}
-                  <div className="alias-details-list">
-                    <div className="cbu-row">
-                      <span>Importe exacto a transferir:</span>
-                      <strong className="text-red-huge">{money(total)}</strong>
-                    </div>
-                    <div className="cbu-row">
-                      <span>Titular de la cuenta:</span>
-                      <b>{CLUB_TITULAR}</b>
-                    </div>
-                    <div className="cbu-row">
-                      <span>CBU:</span>
-                      <code>{CLUB_CBU}</code>
-                    </div>
-                    <div className="cbu-row">
-                      <span>Entradas a reservar:</span>
-                      <b>{quantity} entrada{quantity > 1 ? 's' : ''} general{quantity > 1 ? 'es' : ''}</b>
+                    {/* Detalles bancarios */}
+                    <div className="alias-details-list">
+                      <div className="cbu-row">
+                        <span>Importe exacto a transferir:</span>
+                        <strong className="text-red-huge">{money(total)}</strong>
+                      </div>
+                      <div className="cbu-row">
+                        <span>Desglose de cobro:</span>
+                        <b>{companionCount} acompañante(s) a {money(unitPrice)} {playerCount > 0 ? `(+ ${playerCount} jugador/es gratis)` : ''}</b>
+                      </div>
+                      <div className="cbu-row">
+                        <span>Titular de la cuenta:</span>
+                        <b>{CLUB_TITULAR}</b>
+                      </div>
+                      <div className="cbu-row">
+                        <span>CBU:</span>
+                        <code>{CLUB_CBU}</code>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              ) : (
+                /* Tarjeta especial para Orden de $0 (Solo Jugadores) */
+                <div className="payment-options-col">
+                  <div className="dark-card zero-cost-banner-card">
+                    <div className="zero-icon-pill">⚽ ENTRADA JUGADOR ATSC</div>
+                    <h3 style={{ fontSize: '22px', margin: '14px 0 8px', color: '#00d2b4' }}>
+                      ¡Registro sin costo de acceso!
+                    </h3>
+                    <p style={{ color: '#c2cad7', lineHeight: '1.6', fontSize: '14px' }}>
+                      Como seleccionaste únicamente entradas de jugadores ({quantity} entrada{quantity > 1 ? 's' : ''}), <b>el valor total es de $0</b>. No tenés que realizar ninguna transferencia ni enviar comprobante bancario.
+                    </p>
+                    <div style={{ marginTop: '18px', padding: '14px', background: 'rgba(0, 210, 180, 0.08)', borderRadius: '8px', border: '1px solid rgba(0, 210, 180, 0.25)', fontSize: '13px', color: '#ffffff' }}>
+                      🎟️ <b>Recordatorio de sorteo:</b> Las entradas de jugadores permiten el acceso gratuito al evento pero no cuentan con número para el sorteo de premios.
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Resumen y Botón de Confirmación */}
               <div className="summary-col">
@@ -651,11 +910,15 @@ function App() {
                     </div>
                     <div className="sum-divider" />
                     <div className="sum-row">
-                      <span>Entradas:</span>
-                      <b>{quantity} x {money(unitPrice)}</b>
+                      <span>⚽ Jugadores ($0):</span>
+                      <b className="text-green">{playerCount}</b>
+                    </div>
+                    <div className="sum-row">
+                      <span>🎟️ Acompañantes ({money(unitPrice)}):</span>
+                      <b>{companionCount}</b>
                     </div>
                     <div className="sum-row total-highlight">
-                      <span>TOTAL A TRANSFERIR:</span>
+                      <span>TOTAL A PAGAR:</span>
                       <strong className="price-total">{money(total)}</strong>
                     </div>
                   </div>
@@ -675,12 +938,18 @@ function App() {
                     {busy ? (
                       <>
                         <RefreshCw size={18} className="spinner" />
-                        <span>REGISTRANDO PEDIDO...</span>
+                        <span>PROCESANDO REGISTRO...</span>
                       </>
-                    ) : (
+                    ) : total > 0 ? (
                       <>
                         <Check size={18} />
                         <span>REGISTRAR Y ENVIAR COMPROBANTE</span>
+                        <ArrowRight size={18} />
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={18} />
+                        <span>CONFIRMAR REGISTRO Y OBTENER QR</span>
                         <ArrowRight size={18} />
                       </>
                     )}
@@ -697,83 +966,104 @@ function App() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            SECCIÓN 4: CONFIRMACIÓN PENDIENTE + BOTÓN DE WHATSAPP
+            SECCIÓN 4: CONFIRMACIÓN Y COMPROBANTE
            ══════════════════════════════════════════════════════════════ */}
         {currentStep === 'confirmacion' && orderConfirmation && (
           <section className="step-section animate-fade">
-            <div className="pending-confirmation-banner">
-              <div className="pending-icon-wrap">
-                <AlertCircle size={46} />
-              </div>
-              <span className="status-badge-pending">PENDIENTE DE VALIDACIÓN</span>
-              <h1>¡PEDIDO REGISTRADO #{orderConfirmation.orderId}!</h1>
-              <p>
-                Para confirmar tu compra, por favor <b>envianos el comprobante de transferencia por WhatsApp</b>.
-              </p>
-            </div>
-
-            {/* Gran botón de WhatsApp para enviar el comprobante */}
-            <div className="whatsapp-cta-card">
-              <div className="wa-card-header">
-                <div className="wa-icon-circle">
-                  <MessageCircle size={28} />
+            {orderConfirmation.totalArs === 0 ? (
+              /* Banner de Éxito Inmediato para Jugadores ($0) */
+              <div className="confirmed-success-banner">
+                <div className="confirmed-icon-wrap">
+                  <CheckCircle2 size={50} color="#00d2b4" />
                 </div>
-                <div>
-                  <h3>Paso Final: Enviar Comprobante</h3>
-                  <p>Hacé clic en el botón para abrir WhatsApp con los datos de tu pedido ya listos para adjuntar la captura del comprobante.</p>
-                </div>
-              </div>
-
-              <a
-                href={getWhatsAppUrl()}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-whatsapp-huge"
-              >
-                <MessageCircle size={22} />
-                <span>ENVIAR COMPROBANTE POR WHATSAPP</span>
-              </a>
-
-              <div className="resend-info-note">
+                <span className="status-badge-free">REGISTRO CONFIRMADO · BONIFICADO ($0)</span>
+                <h1>¡REGISTRO CONFIRMADO #{orderConfirmation.orderId}!</h1>
                 <p>
-                  📧 <b>¿Cuándo me llega la entrada con el código QR?</b><br />
-                  Apenas el equipo de administración verifique el pago en el banco, <b>recibirás automáticamente un correo a {orderConfirmation.buyer.email}</b> con los códigos QR de acceso para cada asistente.
+                  Tus entradas de jugador quedaron registradas y confirmadas. Te enviamos el correo electrónico con los códigos QR a <b>{orderConfirmation.buyer.email}</b>.
                 </p>
               </div>
-            </div>
+            ) : (
+              /* Banner de Validación Pendiente para Transferencia con Acompañantes */
+              <div className="pending-confirmation-banner">
+                <div className="pending-icon-wrap">
+                  <AlertCircle size={46} />
+                </div>
+                <span className="status-badge-pending">PENDIENTE DE VALIDACIÓN</span>
+                <h1>¡PEDIDO REGISTRADO #{orderConfirmation.orderId}!</h1>
+                <p>
+                  Para confirmar tu compra de acompañante(s), por favor <b>envianos el comprobante de transferencia por WhatsApp</b>.
+                </p>
+              </div>
+            )}
 
-            {/* Resumen de los datos transferidos */}
+            {/* Si es de pago (> $0), gran botón de WhatsApp */}
+            {orderConfirmation.totalArs > 0 && (
+              <div className="whatsapp-cta-card">
+                <div className="wa-card-header">
+                  <div className="wa-icon-circle">
+                    <MessageCircle size={28} />
+                  </div>
+                  <div>
+                    <h3>Paso Final: Enviar Comprobante</h3>
+                    <p>Hacé clic en el botón para abrir WhatsApp con los datos de tu pedido ya listos para adjuntar la captura del comprobante.</p>
+                  </div>
+                </div>
+
+                <a
+                  href={getWhatsAppUrl()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-whatsapp-huge"
+                >
+                  <MessageCircle size={22} />
+                  <span>ENVIAR COMPROBANTE POR WHATSAPP</span>
+                </a>
+
+                <div className="resend-info-note">
+                  <p>
+                    📧 <b>¿Cuándo me llega la entrada con el código QR?</b><br />
+                    Apenas el equipo de administración verifique el pago en el banco, <b>recibirás automáticamente un correo a {orderConfirmation.buyer.email}</b> con los códigos QR de acceso para cada asistente.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Listado de Entradas Generadas */}
             <div className="dark-card" style={{ marginTop: '24px' }}>
               <div className="card-top-header">
                 <div>
-                  <h3>Detalle de tu compra</h3>
-                  <p>Guardá el número de pedido: <b>#{orderConfirmation.orderId}</b></p>
+                  <h3>Detalle de Entradas ({orderConfirmation.quantity})</h3>
+                  <p>Pedido: <b>#{orderConfirmation.orderId}</b> · Titular: <b>{orderConfirmation.buyer.fullName}</b></p>
                 </div>
-                <div className="card-right-badge">Importe: {money(orderConfirmation.totalArs)}</div>
+                <div className="card-right-badge">Total: {money(orderConfirmation.totalArs)}</div>
               </div>
 
-              <div className="alias-details-list">
-                <div className="cbu-row">
-                  <span>Alias donde transferiste:</span>
-                  <div className="copy-row">
-                    <code>{CLUB_ALIAS}</code>
-                    <button type="button" className="btn-mini-copy" onClick={handleCopyAlias}>
-                      {copiedAlias ? '¡Copiado!' : 'Copiar'}
-                    </button>
+              <div className="confirmation-tickets-grid">
+                {orderConfirmation.tickets.map((t, idx) => (
+                  <div key={idx} className="conf-ticket-card">
+                    <div className="conf-ticket-top">
+                      {t.isPlayer ? (
+                        <span className="badge-player-pill">⚽ JUGADOR (Sin sorteo)</span>
+                      ) : (
+                        <span className="badge-raffle-pill">🎟️ SORTEO N° {t.ticketNumber}</span>
+                      )}
+                      <span className="conf-club-tag">ATSC 2026</span>
+                    </div>
+                    <div className="conf-ticket-name">{t.attendeeName}</div>
+                    <small className="conf-ticket-event">Cena de Fin de Año 2026 · Microestadio ATSC</small>
+
+                    {confirmationQrUrls[t.qrToken] && (
+                      <div className="conf-qr-display">
+                        <img
+                          src={confirmationQrUrls[t.qrToken]}
+                          alt={`QR Entrada ${t.ticketNumber}`}
+                          className="conf-qr-img"
+                        />
+                        <small className="conf-qr-token">{t.qrToken.slice(0, 16)}...</small>
+                      </div>
+                    )}
                   </div>
-                </div>
-                <div className="cbu-row">
-                  <span>Titular de la reserva:</span>
-                  <b>{orderConfirmation.buyer.fullName} (DNI: {orderConfirmation.buyer.dni})</b>
-                </div>
-                <div className="cbu-row">
-                  <span>Entradas solicitadas:</span>
-                  <b>{orderConfirmation.quantity} persona(s)</b>
-                </div>
-                <div className="cbu-row">
-                  <span>Email registrado:</span>
-                  <b>{orderConfirmation.buyer.email}</b>
-                </div>
+                ))}
               </div>
             </div>
 
@@ -783,6 +1073,7 @@ function App() {
                 onClick={() => {
                   setCurrentStep('fiesta')
                   setOrderConfirmation(null)
+                  setConfirmationQrUrls({})
                   window.scrollTo({ top: 0, behavior: 'smooth' })
                 }}
               >

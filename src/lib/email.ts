@@ -31,12 +31,24 @@ export async function sendTicketsEmail(
       // Usar cid si está disponible o el data url
       const qrImageSrc = qrDataUrl ? `cid:${cidName}` : ''
 
+      const isPlayer =
+        t.isPlayer === true ||
+        t.role === 'jugador' ||
+        t.ticketNumber === 'JUGADOR' ||
+        t.ticketNumber === 'Sin sorteo' ||
+        /jugador/i.test(t.attendeeName)
+
+      const headerTitle = isPlayer
+        ? `<strong style="color: #ffffff; font-size: 18px; letter-spacing: 0.5px;">ENTRADA JUGADOR</strong>
+           <div style="color: #60a5fa; font-size: 11px; font-weight: bold; margin-top: 3px;">⚽ ACCESO BONIFICADO (SIN SORTEO)</div>`
+        : `<strong style="color: #ffffff; font-size: 18px; letter-spacing: 0.5px;">ENTRADA N° ${t.ticketNumber.replace(/^N°\s*/i, '')}</strong>
+           <div style="color: #fbbf24; font-size: 11px; font-weight: bold; margin-top: 3px;">🎟️ NÚMERO VÁLIDO PARA EL SORTEO</div>`
+
       return `
         <div style="background:#0f1c2e; border: 1px solid #1a2d47; border-radius: 8px; padding: 20px; margin-bottom: 20px; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
           <div style="border-bottom: 2px solid #d92736; padding-bottom: 12px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
             <div>
-              <strong style="color: #ffffff; font-size: 18px; letter-spacing: 0.5px;">ENTRADA N° ${t.ticketNumber.replace(/^N°\s*/i, '')}</strong>
-              <div style="color: #fbbf24; font-size: 11px; font-weight: bold; margin-top: 3px;">🎟️ NÚMERO VÁLIDO PARA EL SORTEO</div>
+              ${headerTitle}
             </div>
             <span style="color: #d92736; font-weight: bold; font-size: 13px; background: rgba(217,39,54,0.15); padding: 4px 10px; border-radius: 4px;">ATSC 2026</span>
           </div>

@@ -4,11 +4,19 @@ import QRCode from 'qrcode'
 import {
   LockKeyhole, LogOut, RefreshCw,
   Camera, CheckCircle2, XCircle, AlertTriangle, Users,
-  Ticket, ArrowLeft, Search, Check, Send
+  Ticket, ArrowLeft, Search, Check, Send,
+  UserPlus, Minus, Plus
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import { sendTicketsEmail } from './lib/email'
-import type { OrderConfirmation, IssuedTicket } from './types'
+import {
+  type OrderConfirmation,
+  type IssuedTicket,
+  type AttendeeRole,
+  type Category,
+  type AttendeeDetail,
+  CATEGORIES
+} from './types'
 import ClubLogo from './ClubLogo'
 import './admin.css'
 
@@ -62,8 +70,9 @@ export default function AdminPage({
   const [authError, setAuthError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Tabs del panel: 'scanner' | 'tickets' | 'orders'
-  const [activeTab, setActiveTab] = useState<'scanner' | 'tickets' | 'orders'>('scanner')
+  // Tabs del panel: 'scanner' | 'presencial' | 'tickets' | 'orders'
+  const [activeTab, setActiveTab] = useState<'scanner' | 'presencial' | 'tickets' | 'orders'>('scanner')
+  const [unitPrice, setUnitPrice] = useState<number>(25000)
 
   // Datos
   const [orders, setOrders] = useState<OrderRow[]>([])
@@ -72,6 +81,69 @@ export default function AdminPage({
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [approvingOrderId, setApprovingOrderId] = useState<string | null>(null)
   const [actionFeedback, setActionFeedback] = useState<{ message: string; success: boolean } | null>(null)
+
+  // ── Formulario de Venta Presencial en Puerta ──
+  const [presencialBuyer, setPresencialBuyer] = useState({
+    fullName: '',
+    dni: '',
+    email: '',
+    phone: '',
+  })
+  const [presencialQty, setPresencialQty] = useState(1)
+  const [presencialAttendees, setPresencialAttendees] = useState<AttendeeDetail[]>([
+    { name: '', role: 'jugador', category: 'Primera' }
+  ])
+  const [presencialPaymentMethod, setPresencialPaymentMethod] = useState<'efectivo' | 'transferencia' | 'otro'>('efectivo')
+  const [presencialCheckInImmediate, setPresencialCheckInImmediate] = useState(false)
+  const [presencialSubmitting, setPresencialSubmitting] = useState(false)
+  const [presencialError, setPresencialError] = useState('')
+  const [presencialSuccessData, setPresencialSuccessData] = useState<{
+    orderId: string
+    buyer: { fullName: string; dni: string; email: string; phone: string }
+    totalArs: number
+    quantity: number
+    paymentMethod: string
+    checkedInImmediate: boolean
+    tickets: IssuedTicket[]
+    qrDataUrls: Record<string, string>
+    emailMessage?: string
+    emailSuccess?: boolean
+  } | null>(null)
+
+  // Sincronizar asistentes presenciales con la cantidad seleccionada
+  useEffect(() => {
+    setPresencialAttendees(prev => {
+      return Array.from({ length: presencialQty }, (_, idx) => {
+        if (prev[idx]) return prev[idx]
+        return {
+          name: idx === 0 ? presencialBuyer.fullName : '',
+          role: idx === 0 ? 'jugador' : 'acompanante',
+          category: prev[0]?.category || 'Primera'
+        }
+      })
+    })
+  }, [presencialQty])
+
+  const updatePresencialAttendee = (index: number, updates: Partial<AttendeeDetail>) => {
+    setPresencialAttendees(prev => {
+      const list = [...prev]
+      list[index] = { ...list[index], ...updates }
+      return list
+    })
+  }
+
+  // Cálculos de venta presencial
+  const presencialPlayerCount = useMemo(() => {
+    return presencialAttendees.filter(a => a.role === 'jugador').length
+  }, [presencialAttendees])
+
+  const presencialCompanionCount = useMemo(() => {
+    return presencialAttendees.filter(a => a.role === 'acompanante').length
+  }, [presencialAttendees])
+
+  const presencialTotal = useMemo(() => {
+    return presencialCompanionCount * unitPrice
+  }, [presencialCompanionCount, unitPrice])
 
   // Escáner QR
   const [scannerActive, setScannerActive] = useState(false)
@@ -87,9 +159,15 @@ export default function AdminPage({
   const lastScannedTimeRef = useRef<number>(0)
   const cooldownTimerRef = useRef<any>(null)
 
-  // Mapeo correlativo estable para sorteo (ej: 001, 002, 003...)
+  // Función para determinar si una entrada es de jugador (no cuenta para el sorteo)
+  function isPlayerTicket(ticket: { attendee_name?: string; ticket_number?: number | null }): boolean {
+    return ticket.ticket_number == null || /jugador/i.test(ticket.attendee_name || '')
+  }
+
+  // Mapeo correlativo estable para sorteo (ÚNICAMENTE para acompañantes)
   const ticketNumberMap = useMemo(() => {
-    const sorted = [...tickets].sort((a, b) => {
+    const companionTickets = tickets.filter(t => !isPlayerTicket(t))
+    const sorted = [...companionTickets].sort((a, b) => {
       if (a.ticket_number && b.ticket_number) {
         return a.ticket_number - b.ticket_number
       }
@@ -104,7 +182,10 @@ export default function AdminPage({
     return map
   }, [tickets])
 
-  function getTicketDisplayNumber(ticket: { id: string; ticket_number?: number | null }, fallbackIndex?: number): string {
+  function getTicketDisplayNumber(ticket: { id: string; attendee_name?: string; ticket_number?: number | null }, fallbackIndex?: number): string | null {
+    if (isPlayerTicket(ticket)) {
+      return null
+    }
     if (ticket.ticket_number) {
       return String(ticket.ticket_number).padStart(3, '0')
     }
@@ -113,7 +194,7 @@ export default function AdminPage({
     if (fallbackIndex !== undefined) {
       return String(fallbackIndex + 1).padStart(3, '0')
     }
-    return '001'
+    return null
   }
 
   // Verificar sesión activa de Supabase Auth al montar
@@ -194,6 +275,15 @@ export default function AdminPage({
 
         if (!ticketsErr && ticketsData) {
           setTickets(ticketsData as TicketRow[])
+        }
+
+        const { data: configData } = await supabase
+          .from('event_config')
+          .select('ticket_price_ars')
+          .single()
+
+        if (configData?.ticket_price_ars) {
+          setUnitPrice(Number(configData.ticket_price_ars))
         }
       } catch (e) {
         console.warn('Error al cargar datos de Supabase:', e)
@@ -400,7 +490,10 @@ export default function AdminPage({
         return
       }
 
-      const displayTicketNum = getTicketDisplayNumber(matchedTicket)
+      const isPlayer = isPlayerTicket(matchedTicket)
+      const displayTicketNum = isPlayer
+        ? 'JUGADOR (Sin sorteo)'
+        : (getTicketDisplayNumber(matchedTicket) ? `N° ${getTicketDisplayNumber(matchedTicket)}` : undefined)
 
       // Si ya fue utilizado
       if (matchedTicket.status === 'used') {
@@ -551,21 +644,26 @@ export default function AdminPage({
       }
 
       // 2. Mapear a IssuedTicket y generar códigos QR con QRCode
-      const issuedTickets: IssuedTicket[] = orderTickets.map((t, i) => ({
-        ticketNumber: getTicketDisplayNumber(t, i),
-        attendeeName: t.attendee_name,
-        qrToken: t.qr_token,
-        orderId: order.id,
-        eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
-        date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-        venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
-      }))
+      const issuedTickets: IssuedTicket[] = orderTickets.map((t, i) => {
+        const isPl = isPlayerTicket(t)
+        const displayNum = isPl ? 'JUGADOR' : (getTicketDisplayNumber(t, i) || '001')
+        return {
+          ticketNumber: displayNum,
+          attendeeName: t.attendee_name,
+          qrToken: t.qr_token,
+          orderId: order.id,
+          eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
+          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
+          venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
+          isPlayer: isPl,
+        }
+      })
 
       const generatedQrs: Record<string, string> = {}
       for (const t of issuedTickets) {
         const qrContent = JSON.stringify({
           app: 'ATSC-CENA-2026',
-          ticket: `N° ${t.ticketNumber}`,
+          ticket: t.isPlayer ? 'JUGADOR' : `N° ${t.ticketNumber}`,
           attendee: t.attendeeName,
           token: t.qrToken,
           order: t.orderId
@@ -668,21 +766,26 @@ export default function AdminPage({
         throw new Error('No se encontraron entradas en la base de datos para este pedido.')
       }
 
-      const issuedTickets: IssuedTicket[] = orderTickets.map((t, i) => ({
-        ticketNumber: getTicketDisplayNumber(t, i),
-        attendeeName: t.attendee_name,
-        qrToken: t.qr_token,
-        orderId: order.id,
-        eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
-        date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-        venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
-      }))
+      const issuedTickets: IssuedTicket[] = orderTickets.map((t, i) => {
+        const isPl = isPlayerTicket(t)
+        const displayNum = isPl ? 'JUGADOR' : (getTicketDisplayNumber(t, i) || '001')
+        return {
+          ticketNumber: displayNum,
+          attendeeName: t.attendee_name,
+          qrToken: t.qr_token,
+          orderId: order.id,
+          eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
+          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
+          venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
+          isPlayer: isPl,
+        }
+      })
 
       const generatedQrs: Record<string, string> = {}
       for (const t of issuedTickets) {
         const qrContent = JSON.stringify({
           app: 'ATSC-CENA-2026',
-          ticket: `N° ${t.ticketNumber}`,
+          ticket: t.isPlayer ? 'JUGADOR' : `N° ${t.ticketNumber}`,
           attendee: t.attendeeName,
           token: t.qrToken,
           order: t.orderId,
@@ -735,6 +838,231 @@ export default function AdminPage({
     } finally {
       setApprovingOrderId(null)
     }
+  }
+
+  // ── Realizar venta presencial de entradas en puerta ──
+  async function handleRegisterPresencialSale(e: React.FormEvent) {
+    e.preventDefault()
+    setPresencialError('')
+
+    if (!presencialBuyer.fullName.trim() || !presencialBuyer.dni.trim() || !presencialBuyer.email.trim()) {
+      setPresencialError('Por favor completá los campos obligatorios del comprador (Nombre, DNI y Correo).')
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(presencialBuyer.email)) {
+      setPresencialError('Por favor ingresá un correo electrónico válido para despachar los códigos QR.')
+      return
+    }
+
+    // Validar nombres y categorías de cada asistente
+    for (let i = 0; i < presencialQty; i++) {
+      const att = presencialAttendees[i]
+      const effName = att?.name?.trim() || (i === 0 ? presencialBuyer.fullName.trim() : '')
+      if (!effName) {
+        setPresencialError(`Por favor completá el nombre del asistente para la Entrada #${i + 1}.`)
+        return
+      }
+      if (!att?.category) {
+        setPresencialError(`Por favor seleccioná la categoría para la Entrada #${i + 1}.`)
+        return
+      }
+    }
+
+    setPresencialSubmitting(true)
+
+    try {
+      let savedOrderId = ''
+
+      // 1. Guardar orden en Supabase como PAGADO
+      if (supabase) {
+        const { data: orderData, error: orderErr } = await supabase.from('orders').insert({
+          buyer_full_name: presencialBuyer.fullName.trim(),
+          buyer_dni: presencialBuyer.dni.trim(),
+          buyer_email: presencialBuyer.email.trim(),
+          buyer_phone: presencialBuyer.phone.trim() || 'Presencial',
+          quantity: presencialQty,
+          unit_price_ars: presencialQty > 0 ? Math.round(presencialTotal / presencialQty) : 0,
+          total_ars: presencialTotal,
+          payment_method: 'transferencia',
+          status: 'pagado',
+          transfer_reference: `Venta Presencial (${presencialPaymentMethod === 'efectivo' ? 'Efectivo en Puerta' : 'Transferencia en Puerta'})`,
+          paid_at: new Date().toISOString(),
+        }).select('id').single()
+
+        if (orderErr) {
+          console.error('Error al insertar orden presencial:', orderErr)
+          throw new Error(`Error en la base de datos (${orderErr.code}): ${orderErr.message}`)
+        }
+
+        if (orderData?.id) {
+          savedOrderId = orderData.id
+        }
+      }
+
+      const displayOrderId = savedOrderId
+        ? `ATSC-${savedOrderId.slice(0, 6).toUpperCase()}`
+        : `ATSC-${Math.floor(100000 + Math.random() * 900000)}`
+
+      // 2. Determinar número correlativo de sorteo (ÚNICAMENTE para acompañantes)
+      let nextTicketNumber = 1
+      if (supabase) {
+        try {
+          const { data: highestTicket } = await supabase
+            .from('tickets')
+            .select('ticket_number')
+            .not('ticket_number', 'is', null)
+            .order('ticket_number', { ascending: false })
+            .limit(1)
+
+          if (highestTicket && highestTicket.length > 0 && typeof highestTicket[0].ticket_number === 'number') {
+            nextTicketNumber = highestTicket[0].ticket_number + 1
+          } else {
+            const { count } = await supabase.from('tickets').select('*', { count: 'exact', head: true })
+            if (typeof count === 'number' && !isNaN(count)) {
+              nextTicketNumber = count + 1
+            }
+          }
+        } catch { }
+      }
+
+      // 3. Generar tickets presenciales
+      let companionRaffleCount = 0
+      const checkInTimestamp = presencialCheckInImmediate ? new Date().toISOString() : null
+
+      const issuedTickets: IssuedTicket[] = Array.from({ length: presencialQty }, (_, i) => {
+        const att = presencialAttendees[i] || {
+          name: i === 0 ? presencialBuyer.fullName : `Asistente ${i + 1}`,
+          role: (i === 0 ? 'jugador' : 'acompanante') as AttendeeRole,
+          category: 'Primera' as Category,
+        }
+
+        const isPlayer = att.role === 'jugador'
+        let formattedNum = 'JUGADOR'
+        if (!isPlayer) {
+          const currentNum = nextTicketNumber + companionRaffleCount
+          formattedNum = String(currentNum).padStart(3, '0')
+          companionRaffleCount++
+        }
+
+        const rawName = (att.name && att.name.trim())
+          ? att.name.trim()
+          : (i === 0 ? presencialBuyer.fullName.trim() : `Asistente ${i + 1}`)
+
+        const formattedAttendeeName = `${rawName} (${isPlayer ? 'Jugador' : 'Acompañante'} · ${att.category})`
+        const uuidToken = (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `atsc-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`
+
+        return {
+          ticketNumber: formattedNum,
+          attendeeName: formattedAttendeeName,
+          qrToken: uuidToken,
+          orderId: displayOrderId,
+          eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
+          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
+          venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
+          isPlayer,
+          role: att.role,
+          category: att.category,
+        }
+      })
+
+      // 4. Guardar tickets en Supabase
+      if (supabase && savedOrderId) {
+        const ticketRows = issuedTickets.map((t) => ({
+          order_id: savedOrderId,
+          attendee_name: t.attendeeName,
+          qr_token: t.qrToken,
+          status: presencialCheckInImmediate ? 'used' : 'valid',
+          checked_in_at: checkInTimestamp,
+          ticket_number: t.isPlayer ? null : parseInt(t.ticketNumber, 10),
+        }))
+        const { error: ticketErr } = await supabase.from('tickets').insert(ticketRows)
+        if (ticketErr) {
+          const fallbackRows = ticketRows.map(({ ticket_number, ...rest }) => rest)
+          await supabase.from('tickets').insert(fallbackRows)
+        }
+      }
+
+      // 5. Generar códigos QR con QRCode
+      const generatedQrs: Record<string, string> = {}
+      for (const t of issuedTickets) {
+        const qrContent = JSON.stringify({
+          app: 'ATSC-CENA-2026',
+          ticket: t.isPlayer ? 'JUGADOR' : `N° ${t.ticketNumber}`,
+          attendee: t.attendeeName,
+          token: t.qrToken,
+          order: t.orderId
+        })
+        const dataUrl = await QRCode.toDataURL(qrContent, {
+          width: 320,
+          margin: 2,
+          color: {
+            dark: '#070e1a',
+            light: '#ffffff',
+          },
+        })
+        generatedQrs[t.qrToken] = dataUrl
+      }
+
+      // 6. Despachar email inmediatamente con Nodemailer SMTP
+      const conf: OrderConfirmation = {
+        orderId: displayOrderId,
+        buyer: {
+          fullName: presencialBuyer.fullName,
+          dni: presencialBuyer.dni,
+          email: presencialBuyer.email,
+          phone: presencialBuyer.phone,
+        },
+        quantity: presencialQty,
+        totalArs: presencialTotal,
+        paymentMethod: 'transferencia',
+        tickets: issuedTickets,
+        emailSent: false,
+      }
+
+      let emailResult = { success: false, message: '' }
+      try {
+        emailResult = await sendTicketsEmail(conf, generatedQrs)
+      } catch (err: any) {
+        console.error('Error al despachar correo en venta presencial:', err)
+        emailResult = { success: false, message: err?.message || 'Error de envío' }
+      }
+
+      // 7. Actualizar listas del panel
+      void loadAllData()
+
+      // 8. Mostrar pantalla de éxito con los QR generados
+      setPresencialSuccessData({
+        orderId: displayOrderId,
+        buyer: { ...presencialBuyer },
+        totalArs: presencialTotal,
+        quantity: presencialQty,
+        paymentMethod: presencialPaymentMethod,
+        checkedInImmediate: presencialCheckInImmediate,
+        tickets: issuedTickets,
+        qrDataUrls: generatedQrs,
+        emailMessage: emailResult.message,
+        emailSuccess: emailResult.success,
+      })
+
+    } catch (err: any) {
+      console.error('Error en venta presencial:', err)
+      setPresencialError(err?.message || 'Ocurrió un error al procesar la venta presencial.')
+    } finally {
+      setPresencialSubmitting(false)
+    }
+  }
+
+  // Reset para nueva venta presencial
+  function handleResetPresencialForm() {
+    setPresencialSuccessData(null)
+    setPresencialBuyer({ fullName: '', dni: '', email: '', phone: '' })
+    setPresencialQty(1)
+    setPresencialAttendees([{ name: '', role: 'jugador', category: 'Primera' }])
+    setPresencialPaymentMethod('efectivo')
+    setPresencialCheckInImmediate(false)
+    setPresencialError('')
   }
 
   const money = (n: number) =>
@@ -815,21 +1143,29 @@ export default function AdminPage({
   // Filtrado de tickets (ordenados de forma correlativa para sorteo)
   const filteredTickets = [...tickets]
     .sort((a, b) => {
-      const numA = parseInt(getTicketDisplayNumber(a), 10) || 0
-      const numB = parseInt(getTicketDisplayNumber(b), 10) || 0
+      const isPlA = isPlayerTicket(a)
+      const isPlB = isPlayerTicket(b)
+      if (isPlA && !isPlB) return 1
+      if (!isPlA && isPlB) return -1
+      const numA = parseInt(getTicketDisplayNumber(a) || '0', 10) || 0
+      const numB = parseInt(getTicketDisplayNumber(b) || '0', 10) || 0
       return numA - numB
     })
     .filter(t => {
       const q = searchQuery.toLowerCase().trim()
-      const ticketNum = getTicketDisplayNumber(t)
+      const ticketNum = getTicketDisplayNumber(t) || ''
+      const isPl = isPlayerTicket(t)
       const matchesSearch =
         !q ||
         t.attendee_name?.toLowerCase().includes(q) ||
         t.qr_token?.toLowerCase().includes(q) ||
         t.id?.toLowerCase().includes(q) ||
-        ticketNum.includes(q) ||
-        `n° ${ticketNum}`.toLowerCase().includes(q) ||
-        `#${ticketNum}`.toLowerCase().includes(q)
+        (isPl && (q.includes('jugador') || q.includes('sorteo'))) ||
+        (ticketNum && (
+          ticketNum.includes(q) ||
+          `n° ${ticketNum}`.toLowerCase().includes(q) ||
+          `#${ticketNum}`.toLowerCase().includes(q)
+        ))
 
       if (!matchesSearch) return false
       if (filterStatus === 'used') return t.status === 'used'
@@ -873,6 +1209,13 @@ export default function AdminPage({
               👤 {userEmail}
             </span>
           )}
+          <button
+            className="btn-dash-primary"
+            onClick={() => setActiveTab('presencial')}
+            title="Anotar y emitir entrada en el instante a quien compre presencialmente"
+          >
+            <UserPlus size={15} /> + Venta Presencial
+          </button>
           {onBack && (
             <button className="btn-dash-outline" onClick={onBack}>
               <ArrowLeft size={14} /> Ir a la Web
@@ -918,6 +1261,12 @@ export default function AdminPage({
           onClick={() => setActiveTab('scanner')}
         >
           <Camera size={18} /> Escáner de Cámara QR
+        </button>
+        <button
+          className={activeTab === 'presencial' ? 'active tab-presencial-highlight' : ''}
+          onClick={() => setActiveTab('presencial')}
+        >
+          <UserPlus size={18} /> Venta Presencial (Puerta)
         </button>
         <button
           className={activeTab === 'tickets' ? 'active' : ''}
@@ -1095,6 +1444,369 @@ export default function AdminPage({
       )}
 
       {/* ══════════════════════════════════════════════════════════════
+          TAB: VENTA PRESENCIAL DE ENTRADAS EN PUERTA
+         ══════════════════════════════════════════════════════════════ */}
+      {activeTab === 'presencial' && (
+        <section className="presencial-section animate-fade">
+          <div className="presencial-container">
+            {presencialSuccessData ? (
+              /* Tarjeta de Confirmación de Venta Presencial */
+              <div className="presencial-success-card animate-fade">
+                <div className="pres-success-header">
+                  <div className="pres-success-icon-wrap">
+                    <CheckCircle2 size={44} color="#00d2b4" />
+                  </div>
+                  <div>
+                    <span className="pres-success-pill">VENTA REGISTRADA CON ÉXITO</span>
+                    <h2>¡Entradas Emitidas #{presencialSuccessData.orderId}!</h2>
+                    <p>Comprador: <b>{presencialSuccessData.buyer.fullName}</b> (DNI: {presencialSuccessData.buyer.dni})</p>
+                  </div>
+                </div>
+
+                <div className="pres-email-status-banner">
+                  {presencialSuccessData.emailSuccess ? (
+                    <div className="status-email-ok">
+                      <Check size={18} />
+                      <span>Se despachó el correo electrónico con los códigos QR a <b>{presencialSuccessData.buyer.email}</b>.</span>
+                    </div>
+                  ) : (
+                    <div className="status-email-warn">
+                      <AlertTriangle size={18} />
+                      <span>Nota de correo: {presencialSuccessData.emailMessage || 'No se pudo enviar el correo vía SMTP. Verificá credenciales.'} (Podés mostrar los códigos QR abajo para que ingresen ya mismo).</span>
+                    </div>
+                  )}
+                  {presencialSuccessData.checkedInImmediate && (
+                    <div className="status-checkin-ok">
+                      <Check size={18} />
+                      <span><b>Ingreso registrado en puerta:</b> Las {presencialSuccessData.quantity} entrada(s) ya fueron marcadas como INGRESADAS.</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Grilla con los QR emitidos */}
+                <div className="pres-issued-qr-grid">
+                  {presencialSuccessData.tickets.map((t, idx) => (
+                    <div key={idx} className="pres-qr-card">
+                      <div className="pres-qr-top">
+                        {t.isPlayer ? (
+                          <span className="badge-player-pill">⚽ JUGADOR (Sin sorteo)</span>
+                        ) : (
+                          <span className="badge-raffle-pill">🎟️ SORTEO N° {t.ticketNumber}</span>
+                        )}
+                        <span className="pres-club-tag">ATSC 2026</span>
+                      </div>
+                      <strong className="pres-qr-name">{t.attendeeName}</strong>
+                      {presencialSuccessData.qrDataUrls[t.qrToken] && (
+                        <div className="pres-qr-img-wrap">
+                          <img
+                            src={presencialSuccessData.qrDataUrls[t.qrToken]}
+                            alt={`QR Entrada ${t.ticketNumber}`}
+                            width={190}
+                            height={190}
+                          />
+                        </div>
+                      )}
+                      <small className="pres-qr-token">{t.qrToken.slice(0, 18)}...</small>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pres-actions-row">
+                  <button
+                    type="button"
+                    className="btn-dash-primary btn-big"
+                    onClick={handleResetPresencialForm}
+                  >
+                    <Plus size={18} /> Nueva Venta Presencial
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-dash-outline btn-big"
+                    onClick={() => setActiveTab('tickets')}
+                  >
+                    <Ticket size={18} /> Ver en Listado de Entradas
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Formulario de Venta Presencial */
+              <div className="presencial-form-card">
+                <div className="pres-card-header">
+                  <div className="pres-card-icon"><UserPlus size={24} /></div>
+                  <div>
+                    <h2>Venta y Emisión Presencial de Entradas</h2>
+                    <p>Anotá en el momento a los asistentes en puerta y enviales automáticamente sus códigos QR por correo electrónico.</p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleRegisterPresencialSale} className="pres-form">
+                  {/* Datos del Comprador */}
+                  <div className="pres-section-block">
+                    <h3>1. Datos de Contacto del Comprador</h3>
+                    <div className="form-grid-modern">
+                      <div className="form-field full">
+                        <label>Nombre y Apellido Completo *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Ej: Laura Martínez"
+                          value={presencialBuyer.fullName}
+                          onChange={e => {
+                            const val = e.target.value
+                            setPresencialBuyer(b => ({ ...b, fullName: val }))
+                            if (presencialAttendees[0] && (!presencialAttendees[0].name || presencialAttendees[0].name === presencialBuyer.fullName)) {
+                              updatePresencialAttendee(0, { name: val })
+                            }
+                          }}
+                        />
+                      </div>
+
+                      <div className="form-field">
+                        <label>DNI del Comprador *</label>
+                        <input
+                          type="text"
+                          required
+                          inputMode="numeric"
+                          placeholder="Sin puntos ni espacios"
+                          value={presencialBuyer.dni}
+                          onChange={e => setPresencialBuyer(b => ({ ...b, dni: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
+                        />
+                      </div>
+
+                      <div className="form-field">
+                        <label>Teléfono Celular / WhatsApp</label>
+                        <input
+                          type="tel"
+                          placeholder="+54 9 261 ..."
+                          value={presencialBuyer.phone}
+                          onChange={e => setPresencialBuyer(b => ({ ...b, phone: e.target.value }))}
+                        />
+                      </div>
+
+                      <div className="form-field full">
+                        <label>
+                          Correo Electrónico para enviar los códigos QR *
+                          <span className="highlight-tag">Se le despachará el mail con los QR al instante</span>
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          placeholder="comprador@gmail.com"
+                          value={presencialBuyer.email}
+                          onChange={e => setPresencialBuyer(b => ({ ...b, email: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Cantidad de entradas */}
+                  <div className="pres-section-block">
+                    <div className="pres-qty-header-row">
+                      <div>
+                        <h3>2. Cantidad de Entradas</h3>
+                        <p style={{ color: '#8a9ab5', fontSize: '13px', margin: 0 }}>Indicá cuántas personas ingresan con esta compra</p>
+                      </div>
+                      <div className="stepper-modern">
+                        <button
+                          type="button"
+                          onClick={() => setPresencialQty(q => Math.max(1, q - 1))}
+                          disabled={presencialQty <= 1}
+                        >
+                          <Minus size={18} />
+                        </button>
+                        <span className="stepper-val">{presencialQty}</span>
+                        <button
+                          type="button"
+                          onClick={() => setPresencialQty(q => Math.min(10, q + 1))}
+                          disabled={presencialQty >= 10}
+                        >
+                          <Plus size={18} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Lista de selección de roles y categorías para cada entrada */}
+                    <div className="pres-attendees-list">
+                      {Array.from({ length: presencialQty }).map((_, idx) => {
+                        const att = presencialAttendees[idx] || {
+                          name: '',
+                          role: 'jugador' as AttendeeRole,
+                          category: 'Primera' as Category,
+                        }
+
+                        return (
+                          <div key={idx} className="pres-attendee-item-card">
+                            <div className="pres-item-header">
+                              <span className="attendee-tag-badge">Entrada #{idx + 1}</span>
+                              <span className={`attendee-type-indicator ${att.role === 'jugador' ? 'indicator-jugador' : 'indicator-acompanante'}`}>
+                                {att.role === 'jugador' ? '⚽ Jugador · $0 (Sin sorteo)' : `🎟️ Acompañante · ${money(unitPrice)} (Con sorteo)`}
+                              </span>
+                            </div>
+
+                            <div className="pres-item-fields-grid">
+                              {/* 1. Rol */}
+                              <div className="pres-field-col">
+                                <label><b>1. Tipo de Asistente *</b></label>
+                                <div className="role-selector-grid">
+                                  <button
+                                    type="button"
+                                    className={`role-option-btn ${att.role === 'jugador' ? 'selected role-jugador' : ''}`}
+                                    onClick={() => updatePresencialAttendee(idx, { role: 'jugador' })}
+                                  >
+                                    <span className="role-opt-emoji">⚽</span>
+                                    <div className="role-opt-text">
+                                      <strong>Jugador</strong>
+                                      <small>Sin costo · Sin sorteo</small>
+                                    </div>
+                                    {att.role === 'jugador' && <Check size={14} className="role-check" />}
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className={`role-option-btn ${att.role === 'acompanante' ? 'selected role-acompanante' : ''}`}
+                                    onClick={() => updatePresencialAttendee(idx, { role: 'acompanante' })}
+                                  >
+                                    <span className="role-opt-emoji">🎟️</span>
+                                    <div className="role-opt-text">
+                                      <strong>Acompañante</strong>
+                                      <small>{money(unitPrice)} · Con sorteo</small>
+                                    </div>
+                                    {att.role === 'acompanante' && <Check size={14} className="role-check" />}
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* 2. Categoría */}
+                              <div className="pres-field-col">
+                                <label><b>2. Categoría *</b></label>
+                                <select
+                                  className="category-select-input"
+                                  value={att.category}
+                                  onChange={e => updatePresencialAttendee(idx, { category: e.target.value as Category })}
+                                  required
+                                >
+                                  {CATEGORIES.map(cat => (
+                                    <option key={cat} value={cat}>
+                                      Categoría {cat}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+
+                              {/* 3. Nombre */}
+                              <div className="pres-field-col">
+                                <label><b>3. Nombre del Asistente *</b></label>
+                                <input
+                                  type="text"
+                                  className="attendee-text-input"
+                                  required
+                                  placeholder={idx === 0 ? (presencialBuyer.fullName || 'Nombre y Apellido') : `Nombre Asistente Entrada #${idx + 1}`}
+                                  value={att.name}
+                                  onChange={e => updatePresencialAttendee(idx, { name: e.target.value })}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Método de Cobro y Check-in */}
+                  <div className="pres-section-block">
+                    <h3>3. Forma de Pago y Acceso</h3>
+                    <div className="pres-payment-method-row">
+                      <label className="pres-label">Medio de cobro recibido:</label>
+                      <div className="payment-method-pills">
+                        <button
+                          type="button"
+                          className={`method-pill ${presencialPaymentMethod === 'efectivo' ? 'selected' : ''}`}
+                          onClick={() => setPresencialPaymentMethod('efectivo')}
+                        >
+                          💵 Efectivo en Puerta
+                        </button>
+                        <button
+                          type="button"
+                          className={`method-pill ${presencialPaymentMethod === 'transferencia' ? 'selected' : ''}`}
+                          onClick={() => setPresencialPaymentMethod('transferencia')}
+                        >
+                          📲 Transferencia Bancaria
+                        </button>
+                        <button
+                          type="button"
+                          className={`method-pill ${presencialPaymentMethod === 'otro' ? 'selected' : ''}`}
+                          onClick={() => setPresencialPaymentMethod('otro')}
+                        >
+                          🎁 Especial / Bonificado
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="pres-checkin-option">
+                      <label className="checkbox-custom-label">
+                        <input
+                          type="checkbox"
+                          checked={presencialCheckInImmediate}
+                          onChange={e => setPresencialCheckInImmediate(e.target.checked)}
+                        />
+                        <span>
+                          <b>Check-in automático en puerta:</b> Marcar inmediatamente como ingresado (el asistente entra al evento ahora mismo sin tener que escanearlo después).
+                        </span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Resumen de cobro */}
+                  <div className="pres-summary-box">
+                    <div className="summary-breakdown-row">
+                      <span>⚽ Entradas Jugadores ({presencialPlayerCount}):</span>
+                      <strong className="text-green">¡GRATIS! ($0)</strong>
+                    </div>
+                    <div className="summary-breakdown-row">
+                      <span>🎟️ Entradas Acompañantes ({presencialCompanionCount}):</span>
+                      <strong>{money(presencialCompanionCount * unitPrice)}</strong>
+                    </div>
+                    <div className="summary-divider-line" />
+                    <div className="summary-total-calc-row">
+                      <span>TOTAL COBRADO EN PUERTA:</span>
+                      <strong className="total-amount-highlight">{money(presencialTotal)}</strong>
+                    </div>
+                  </div>
+
+                  {presencialError && (
+                    <div className="error-banner" style={{ marginTop: '16px' }}>
+                      <AlertTriangle size={18} />
+                      <span>{presencialError}</span>
+                    </div>
+                  )}
+
+                  <div className="pres-form-actions">
+                    <button
+                      type="submit"
+                      className="btn-huge-red full-width"
+                      disabled={presencialSubmitting}
+                    >
+                      {presencialSubmitting ? (
+                        <>
+                          <RefreshCw size={18} className="spinner" />
+                          <span>REGISTRANDO VENTA Y ENVIANDO MAIL CON QR...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send size={18} />
+                          <span>REGISTRAR VENTA Y ENVIAR QR AL CORREO</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
           TAB 2: LISTADO DE ENTRADAS & CHECK-IN MANUAL
          ══════════════════════════════════════════════════════════════ */}
       {activeTab === 'tickets' && (
@@ -1147,9 +1859,15 @@ export default function AdminPage({
                 {filteredTickets.map(ticket => (
                   <tr key={ticket.id}>
                     <td>
-                      <span className="ticket-badge-number">
-                        N° {getTicketDisplayNumber(ticket)}
-                      </span>
+                      {isPlayerTicket(ticket) ? (
+                        <span className="ticket-badge-player">
+                          ⚽ Jugador (Sin sorteo)
+                        </span>
+                      ) : (
+                        <span className="ticket-badge-number">
+                          🎟️ N° {getTicketDisplayNumber(ticket)}
+                        </span>
+                      )}
                     </td>
                     <td><strong>{ticket.attendee_name}</strong></td>
                     <td><small className="token-cell">{ticket.qr_token.slice(0, 16)}...</small></td>
