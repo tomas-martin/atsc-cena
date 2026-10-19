@@ -5,7 +5,9 @@ import {
   LockKeyhole, LogOut, RefreshCw,
   Camera, CheckCircle2, XCircle, AlertTriangle, Users,
   Ticket, ArrowLeft, Search, Check, Send,
-  UserPlus, Minus, Plus
+  UserPlus, Minus, Plus,
+  Gift, Trophy, Sparkles, Dices, RotateCcw, Volume2, VolumeX,
+  Copy, Trash2, Award, ChevronDown, ChevronUp
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import { sendTicketsEmail } from './lib/email'
@@ -54,6 +56,20 @@ interface ScanResult {
   buyerName?: string
 }
 
+export interface RaffleParticipant {
+  ticket: TicketRow
+  ticketNumber: string
+  order?: OrderRow
+  isCheckedIn: boolean
+}
+
+export interface WinnerRecord {
+  id: string
+  timestamp: number
+  prizeName: string
+  participant: RaffleParticipant
+}
+
 export default function AdminPage({
   onBack,
   logoUrl
@@ -70,8 +86,8 @@ export default function AdminPage({
   const [authError, setAuthError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Tabs del panel: 'scanner' | 'presencial' | 'tickets' | 'orders'
-  const [activeTab, setActiveTab] = useState<'scanner' | 'presencial' | 'tickets' | 'orders'>('scanner')
+  // Tabs del panel: 'scanner' | 'presencial' | 'tickets' | 'orders' | 'sorteo'
+  const [activeTab, setActiveTab] = useState<'scanner' | 'presencial' | 'tickets' | 'orders' | 'sorteo'>('scanner')
   const [unitPrice, setUnitPrice] = useState<number>(25000)
 
   // Datos
@@ -195,6 +211,224 @@ export default function AdminPage({
       return String(fallbackIndex + 1).padStart(3, '0')
     }
     return null
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // ESTADO Y LÓGICA DEL SORTEO DE ENTRADAS AL AZAR
+  // ═════════════════════════════════════════════════════════════════
+  const [raffleFilter, setRaffleFilter] = useState<'checked_in_only' | 'all'>('checked_in_only')
+  const [excludePreviousWinners, setExcludePreviousWinners] = useState(true)
+  const [soundEnabled, setSoundEnabled] = useState(true)
+  const [prizeInput, setPrizeInput] = useState('')
+  const [isRolling, setIsRolling] = useState(false)
+  const [rollingNumber, setRollingNumber] = useState('???')
+  const [rollingAttendee, setRollingAttendee] = useState('')
+  const [currentWinner, setCurrentWinner] = useState<RaffleParticipant | null>(null)
+  const [copiedRecordId, setCopiedRecordId] = useState<string | null>(null)
+  const [showTransparency, setShowTransparency] = useState(false)
+  const [transparencySearch, setTransparencySearch] = useState('')
+  const [winnersHistory, setWinnersHistory] = useState<WinnerRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('atsc_raffle_winners_v1')
+      return saved ? JSON.parse(saved) : []
+    } catch {
+      return []
+    }
+  })
+
+  // Sincronizar historial con localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('atsc_raffle_winners_v1', JSON.stringify(winnersHistory))
+    } catch {}
+  }, [winnersHistory])
+
+  // Participantes elegibles para sorteo (solo acompañantes con número de sorteo)
+  const raffleParticipants = useMemo<RaffleParticipant[]>(() => {
+    const companionTickets = tickets.filter(t => !isPlayerTicket(t) && t.status !== 'cancelled')
+    return companionTickets.map(ticket => {
+      const ticketNumber = getTicketDisplayNumber(ticket) || '---'
+      const order = orders.find(o => o.id === ticket.order_id)
+      const isCheckedIn = ticket.status === 'used' || !!ticket.checked_in_at
+      return {
+        ticket,
+        ticketNumber,
+        order,
+        isCheckedIn
+      }
+    })
+  }, [tickets, orders, ticketNumberMap])
+
+  const eligibleParticipants = useMemo(() => {
+    return raffleParticipants.filter(p => {
+      if (raffleFilter === 'checked_in_only' && !p.isCheckedIn) return false
+      if (excludePreviousWinners && winnersHistory.some(w => w.participant.ticket.id === p.ticket.id)) return false
+      return true
+    })
+  }, [raffleParticipants, raffleFilter, excludePreviousWinners, winnersHistory])
+
+  // Audio Web API para efectos de sonido
+  function playTickSound() {
+    if (!soundEnabled) return
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      if (!AudioCtx) return
+      const ctx = new AudioCtx()
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'triangle'
+      osc.frequency.setValueAtTime(750 + Math.random() * 250, ctx.currentTime)
+      gain.gain.setValueAtTime(0.08, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start()
+      osc.stop(ctx.currentTime + 0.05)
+    } catch {}
+  }
+
+  function playFanfareSound() {
+    if (!soundEnabled) return
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext
+      if (!AudioCtx) return
+      const ctx = new AudioCtx()
+      const now = ctx.currentTime
+      const notes = [523.25, 659.25, 783.99, 1046.50]
+      notes.forEach((freq, idx) => {
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.type = 'sine'
+        osc.frequency.setValueAtTime(freq, now + idx * 0.1)
+        gain.gain.setValueAtTime(0, now + idx * 0.1)
+        gain.gain.linearRampToValueAtTime(0.18, now + idx * 0.1 + 0.04)
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.1 + 0.8)
+        osc.connect(gain)
+        gain.connect(ctx.destination)
+        osc.start(now + idx * 0.1)
+        osc.stop(now + idx * 0.1 + 0.85)
+      })
+    } catch {}
+  }
+
+  // Animación de confeti en canvas
+  const confettiCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  function triggerConfetti() {
+    const canvas = confettiCanvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    canvas.width = window.innerWidth
+    canvas.height = window.innerHeight
+
+    const particles: Array<{
+      x: number
+      y: number
+      vx: number
+      vy: number
+      size: number
+      color: string
+      rotation: number
+      vRot: number
+    }> = []
+
+    const colors = ['#d92736', '#fbbf24', '#ffffff', '#10b981', '#3b82f6']
+    for (let i = 0; i < 90; i++) {
+      particles.push({
+        x: canvas.width * 0.5 + (Math.random() * 240 - 120),
+        y: canvas.height * 0.35,
+        vx: (Math.random() - 0.5) * 16,
+        vy: (Math.random() - 0.9) * 16,
+        size: Math.random() * 8 + 5,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * 360,
+        vRot: (Math.random() - 0.5) * 10,
+      })
+    }
+
+    const startTime = Date.now()
+    function render() {
+      if (!ctx || !canvas) return
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      const elapsed = Date.now() - startTime
+
+      particles.forEach(p => {
+        p.x += p.vx
+        p.y += p.vy
+        p.vy += 0.35
+        p.rotation += p.vRot
+
+        ctx.save()
+        ctx.translate(p.x, p.y)
+        ctx.rotate((p.rotation * Math.PI) / 180)
+        ctx.fillStyle = p.color
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6)
+        ctx.restore()
+      })
+
+      if (elapsed < 3500) {
+        requestAnimationFrame(render)
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+      }
+    }
+
+    render()
+  }
+
+  // Ejecución del Sorteo al Azar
+  function startDraw() {
+    if (isRolling || eligibleParticipants.length === 0) return
+
+    setIsRolling(true)
+    setCurrentWinner(null)
+
+    // Selección aleatoria
+    const chosenIndex = Math.floor(Math.random() * eligibleParticipants.length)
+    const winnerCandidate = eligibleParticipants[chosenIndex]
+
+    let currentStep = 0
+    const totalSteps = 28
+    let intervalTime = 40
+
+    function step() {
+      const randIndex = Math.floor(Math.random() * eligibleParticipants.length)
+      const p = eligibleParticipants[randIndex]
+      setRollingNumber(p.ticketNumber)
+      setRollingAttendee(p.ticket.attendee_name)
+      playTickSound()
+
+      currentStep++
+      if (currentStep < totalSteps) {
+        if (currentStep > totalSteps * 0.6) {
+          intervalTime += 18
+        } else if (currentStep > totalSteps * 0.35) {
+          intervalTime += 6
+        }
+        setTimeout(step, intervalTime)
+      } else {
+        setRollingNumber(winnerCandidate.ticketNumber)
+        setRollingAttendee(winnerCandidate.ticket.attendee_name)
+        setCurrentWinner(winnerCandidate)
+        setIsRolling(false)
+        playFanfareSound()
+        triggerConfetti()
+
+        const defaultPrize = prizeInput.trim() || `Premio #${winnersHistory.length + 1}`
+        const newRecord: WinnerRecord = {
+          id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
+          timestamp: Date.now(),
+          prizeName: defaultPrize,
+          participant: winnerCandidate
+        }
+
+        setWinnersHistory(prev => [newRecord, ...prev])
+        setPrizeInput('')
+      }
+    }
+
+    setTimeout(step, intervalTime)
   }
 
   // Verificar sesión activa de Supabase Auth al montar
@@ -1193,6 +1427,9 @@ export default function AdminPage({
 
   return (
     <main className="admin-dashboard">
+      {/* Canvas flotante para confeti festivo en sorteos */}
+      <canvas ref={confettiCanvasRef} className="sorteo-confetti-canvas" />
+
       {/* Header del Dashboard */}
       <header className="dashboard-header">
         <div className="dash-title-wrap">
@@ -1267,6 +1504,12 @@ export default function AdminPage({
           onClick={() => setActiveTab('presencial')}
         >
           <UserPlus size={18} /> Venta Presencial (Puerta)
+        </button>
+        <button
+          className={activeTab === 'sorteo' ? 'active tab-sorteo-highlight' : ''}
+          onClick={() => setActiveTab('sorteo')}
+        >
+          <Gift size={18} /> Sorteo de Entradas
         </button>
         <button
           className={activeTab === 'tickets' ? 'active' : ''}
@@ -1840,6 +2083,15 @@ export default function AdminPage({
               >
                 ⚪ Sin Ingresar ({Math.max(0, totalTicketsIssued - totalCheckedIn)})
               </button>
+              <button
+                type="button"
+                className="btn-dash-outline"
+                style={{ borderColor: 'rgba(251, 191, 36, 0.4)', color: '#fbbf24', marginLeft: 'auto' }}
+                onClick={() => setActiveTab('sorteo')}
+                title="Abrir la ruleta / sorteador de números de entradas"
+              >
+                <Gift size={15} /> Ir al Sorteo
+              </button>
             </div>
           </div>
 
@@ -2054,6 +2306,429 @@ export default function AdminPage({
                 )}
               </tbody>
             </table>
+          </div>
+        </section>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          TAB 5: SORTEO DE ENTRADAS (NÚMERO AL AZAR)
+         ══════════════════════════════════════════════════════════════ */}
+      {activeTab === 'sorteo' && (
+        <section className="sorteo-section animate-fade">
+          <div className="sorteo-hero-card">
+            <div className="sorteo-badge-pill">
+              <Sparkles size={14} /> Sorteo Oficial · Andes Talleres Sport Club
+            </div>
+            <h2>Sorteo de Entradas de la Cena</h2>
+            <p>
+              Elegí un número al azar de manera transparente y en vivo entre las entradas de acompañantes emitidas.
+            </p>
+
+            {/* Barra de Ajustes y Filtro de Participantes */}
+            <div className="sorteo-settings-bar">
+              <div className="sorteo-filter-toggle">
+                <button
+                  type="button"
+                  className={`sorteo-filter-btn ${raffleFilter === 'checked_in_only' ? 'active' : ''}`}
+                  onClick={() => setRaffleFilter('checked_in_only')}
+                  disabled={isRolling}
+                >
+                  <CheckCircle2 size={14} /> Solo Presentes ({raffleParticipants.filter(p => p.isCheckedIn).length})
+                </button>
+                <button
+                  type="button"
+                  className={`sorteo-filter-btn ${raffleFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setRaffleFilter('all')}
+                  disabled={isRolling}
+                >
+                  <Ticket size={14} /> Todas las Entradas ({raffleParticipants.length})
+                </button>
+              </div>
+
+              <label className="sorteo-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={excludePreviousWinners}
+                  onChange={e => setExcludePreviousWinners(e.target.checked)}
+                  disabled={isRolling}
+                />
+                Excluir ganadores previos ({winnersHistory.length})
+              </label>
+
+              <button
+                type="button"
+                className={`sorteo-sound-btn ${soundEnabled ? 'sound-on' : ''}`}
+                onClick={() => setSoundEnabled(s => !s)}
+                title="Activar / desactivar efectos de sonido del sorteo"
+              >
+                {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+                {soundEnabled ? 'Sonido ON' : 'Silencio'}
+              </button>
+            </div>
+
+            {/* Escenario Digital / Pantalla del Sorteo */}
+            <div className={`sorteo-stage-box ${isRolling ? 'is-spinning' : ''}`}>
+              <div className="sorteo-stage-tag">
+                {isRolling ? '⚡ SORTEANDO NÚMERO AL AZAR...' : (currentWinner ? '🏆 ¡ENTRADA GANADORA!' : 'NÚMERO DE ENTRADA')}
+              </div>
+
+              <div className={`sorteo-digital-number ${currentWinner && !isRolling ? 'winner-glory' : ''}`}>
+                {isRolling ? `#${rollingNumber}` : (currentWinner ? `#${currentWinner.ticketNumber}` : (rollingNumber !== '???' ? `#${rollingNumber}` : '#???'))}
+              </div>
+
+              <div className="sorteo-preview-name">
+                {isRolling ? (
+                  <span>{rollingAttendee}</span>
+                ) : currentWinner ? (
+                  <strong style={{ color: '#ffffff', fontSize: '18px' }}>{currentWinner.ticket.attendee_name}</strong>
+                ) : (
+                  <span>Presioná el botón para sortear una entrada al azar</span>
+                )}
+              </div>
+            </div>
+
+            {/* Input Opcional de Nombre de Premio */}
+            <div className="sorteo-prize-input-row">
+              <label><Award size={14} /> Premio en juego:</label>
+              <input
+                type="text"
+                placeholder={`Ej: Camiseta Oficial, Vino Reserva, Premio #${winnersHistory.length + 1}...`}
+                value={prizeInput}
+                onChange={e => setPrizeInput(e.target.value)}
+                disabled={isRolling}
+              />
+            </div>
+
+            {/* Botón de Acción Principal */}
+            <div className="sorteo-action-buttons">
+              <button
+                type="button"
+                className="btn-sorteo-main"
+                onClick={startDraw}
+                disabled={isRolling || eligibleParticipants.length === 0}
+              >
+                {isRolling ? (
+                  <>
+                    <RefreshCw size={22} className="spinner" /> Sorteando en Vivo...
+                  </>
+                ) : (
+                  <>
+                    <Dices size={22} /> ¡Sortear Número Ganador!
+                  </>
+                )}
+              </button>
+
+              {currentWinner && !isRolling && (
+                <button
+                  type="button"
+                  className="btn-dash-outline"
+                  onClick={startDraw}
+                  title="Volver a sortear otro ganador"
+                  disabled={eligibleParticipants.length === 0}
+                >
+                  <RotateCcw size={15} /> Sortear Otro
+                </button>
+              )}
+            </div>
+
+            <div className="sorteo-pool-count">
+              {eligibleParticipants.length > 0 ? (
+                <>
+                  Participan <strong>{eligibleParticipants.length}</strong> entradas de acompañantes en este sorteo
+                  {raffleFilter === 'checked_in_only' ? ' (solo quienes ya ingresaron al evento)' : ' (todas las vendidas)'}.
+                </>
+              ) : (
+                <span style={{ color: '#ff6874' }}>
+                  ⚠️ No hay entradas participantes disponibles con los filtros seleccionados.
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Tarjeta de Ganador Revelado */}
+          {currentWinner && (
+            <div className="winner-card-container">
+              <div className="winner-card-header">
+                <div className="winner-trophy-badge">
+                  <Trophy size={22} /> ¡NÚMERO GANADOR REVELADO!
+                </div>
+                <span className="winner-number-pill">
+                  N° {currentWinner.ticketNumber}
+                </span>
+              </div>
+
+              {winnersHistory[0] && (
+                <div className="winner-prize-title">
+                  <Gift size={16} color="#fbbf24" />
+                  <span>{winnersHistory[0].prizeName}</span>
+                </div>
+              )}
+
+              <div className="winner-details-grid">
+                <div className="winner-detail-col">
+                  <label>Asistente Ganador</label>
+                  <strong>{currentWinner.ticket.attendee_name}</strong>
+                  <span>Entrada N° {currentWinner.ticketNumber} (Acompañante)</span>
+                </div>
+
+                <div className="winner-detail-col">
+                  <label>Presencia en Puerta</label>
+                  {currentWinner.isCheckedIn ? (
+                    <div className="winner-attendance-status winner-att-present">
+                      <CheckCircle2 size={14} /> PRESENTE EN EL SALÓN
+                      {currentWinner.ticket.checked_in_at && (
+                        <span> · Ingreso {new Date(currentWinner.ticket.checked_in_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs</span>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="winner-attendance-status winner-att-absent">
+                      <AlertTriangle size={14} /> NO REGISTRÓ INGRESO AÚN
+                    </div>
+                  )}
+                </div>
+
+                <div className="winner-detail-col">
+                  <label>Comprador / Titular</label>
+                  <strong>{currentWinner.order?.buyer_full_name || 'Venta directa'}</strong>
+                  <span>DNI: {currentWinner.order?.buyer_dni || '—'} · Pedido #{currentWinner.ticket.order_id?.slice(0, 6).toUpperCase()}</span>
+                </div>
+
+                <div className="winner-detail-col">
+                  <label>Teléfono de Contacto</label>
+                  <strong>{currentWinner.order?.buyer_phone || 'Sin teléfono'}</strong>
+                  <span>{currentWinner.order?.buyer_email || '—'}</span>
+                </div>
+              </div>
+
+              <div className="winner-actions-bar">
+                {currentWinner.order?.buyer_phone && (
+                  <a
+                    href={`https://wa.me/${currentWinner.order.buyer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(`¡Hola ${currentWinner.order.buyer_full_name}! Te avisamos que tu entrada N° ${currentWinner.ticketNumber} (${currentWinner.ticket.attendee_name}) acaba de salir ganadora en el sorteo de la Cena Andes Talleres 2026! 🏆🎉`)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-winner-wa"
+                  >
+                    <Send size={14} /> Contactar por WhatsApp
+                  </a>
+                )}
+
+                <button
+                  type="button"
+                  className="btn-winner-copy"
+                  onClick={() => {
+                    const text = `🏆 GANADOR DEL SORTEO ATSC\nN°: ${currentWinner.ticketNumber}\nAsistente: ${currentWinner.ticket.attendee_name}\nComprador: ${currentWinner.order?.buyer_full_name || '—'} (DNI: ${currentWinner.order?.buyer_dni || '—'})\nTeléfono: ${currentWinner.order?.buyer_phone || '—'}\nEstado: ${currentWinner.isCheckedIn ? 'Presente en el salón' : 'Sin ingreso registrado'}`
+                    navigator.clipboard.writeText(text)
+                    setCopiedRecordId('current')
+                    setTimeout(() => setCopiedRecordId(null), 2500)
+                  }}
+                >
+                  <Copy size={14} /> {copiedRecordId === 'current' ? '¡Copiado!' : 'Copiar Ganador'}
+                </button>
+
+                <button
+                  type="button"
+                  className="btn-winner-discard"
+                  onClick={() => {
+                    if (confirm('¿Descartar este ganador y volver a sortear? (Se eliminará del historial de ganadores)')) {
+                      if (winnersHistory.length > 0) {
+                        setWinnersHistory(prev => prev.filter(w => w.participant.ticket.id !== currentWinner.ticket.id))
+                      }
+                      setCurrentWinner(null)
+                      setRollingNumber('???')
+                    }
+                  }}
+                  title="Descartar este resultado (ej: si no estaba presente)"
+                >
+                  <RotateCcw size={14} /> Descartar y Re-sortear
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Historial de Ganadores de la Sesión */}
+          <div className="sorteo-history-card">
+            <div className="sorteo-history-header">
+              <h3>
+                <Trophy size={18} color="#fbbf24" /> Historial de Ganadores ({winnersHistory.length})
+              </h3>
+              {winnersHistory.length > 0 && (
+                <div className="sorteo-history-actions">
+                  <button
+                    type="button"
+                    className="btn-dash-outline"
+                    onClick={() => {
+                      const listText = winnersHistory.map((w, idx) =>
+                        `${idx + 1}. [N° ${w.participant.ticketNumber}] ${w.prizeName}: ${w.participant.ticket.attendee_name} (Comprador: ${w.participant.order?.buyer_full_name || '—'} - Tel: ${w.participant.order?.buyer_phone || '—'})`
+                      ).join('\n')
+                      navigator.clipboard.writeText(`🏆 GANADORES SORTEO CENA ANDES TALLERES:\n\n${listText}`)
+                      setCopiedRecordId('all')
+                      setTimeout(() => setCopiedRecordId(null), 2500)
+                    }}
+                  >
+                    <Copy size={13} /> {copiedRecordId === 'all' ? '¡Lista Copiada!' : 'Copiar Todos'}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-history-clear"
+                    onClick={() => {
+                      if (confirm('¿Seguro que deseás reiniciar el historial de ganadores?')) {
+                        setWinnersHistory([])
+                        setCurrentWinner(null)
+                        setRollingNumber('???')
+                      }
+                    }}
+                  >
+                    <Trash2 size={13} /> Reiniciar Historial
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {winnersHistory.length === 0 ? (
+              <div className="sorteo-history-empty">
+                Aún no se sortearon premios en esta sesión. Presioná el botón de sortear para comenzar.
+              </div>
+            ) : (
+              <div className="table-scroll-wrap">
+                <table className="sorteo-history-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Premio</th>
+                      <th>N° Entrada</th>
+                      <th>Asistente Ganador</th>
+                      <th>Comprador & Contacto</th>
+                      <th>Asistencia</th>
+                      <th>Hora</th>
+                      <th>Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {winnersHistory.map((rec, idx) => (
+                      <tr key={rec.id}>
+                        <td className="history-rank">#{winnersHistory.length - idx}</td>
+                        <td>
+                          <strong>{rec.prizeName}</strong>
+                        </td>
+                        <td>
+                          <span className="order-num-pill" style={{ color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.1)' }}>
+                            🎟️ N° {rec.participant.ticketNumber}
+                          </span>
+                        </td>
+                        <td>
+                          <strong>{rec.participant.ticket.attendee_name}</strong>
+                        </td>
+                        <td>
+                          <div>{rec.participant.order?.buyer_full_name || '—'}</div>
+                          <small style={{ color: '#8496ad' }}>{rec.participant.order?.buyer_phone || ''}</small>
+                        </td>
+                        <td>
+                          {rec.participant.isCheckedIn ? (
+                            <span className="badge-status badge-used">Presente</span>
+                          ) : (
+                            <span className="badge-status badge-valid">Sin ingreso</span>
+                          )}
+                        </td>
+                        <td>
+                          <small style={{ color: '#8496ad' }}>
+                            {new Date(rec.timestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
+                          </small>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="btn-action-revert"
+                            style={{ padding: '4px 8px', fontSize: '11px' }}
+                            title="Eliminar este registro del historial"
+                            onClick={() => {
+                              setWinnersHistory(prev => prev.filter(w => w.id !== rec.id))
+                              if (currentWinner?.ticket.id === rec.participant.ticket.id) {
+                                setCurrentWinner(null)
+                              }
+                            }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Transparencia: Acordeón para inspeccionar entradas habilitadas */}
+          <div className="sorteo-transparency-card">
+            <div
+              className="transparency-toggle-row"
+              onClick={() => setShowTransparency(prev => !prev)}
+            >
+              <h4>
+                <Ticket size={16} color="#fbbf24" />
+                Verificación de Participantes ({eligibleParticipants.length} habilitados para sortear)
+              </h4>
+              <button type="button" className="btn-dash-outline" style={{ padding: '4px 10px' }}>
+                {showTransparency ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+            </div>
+
+            {showTransparency && (
+              <div className="transparency-body">
+                <div className="transparency-search">
+                  <div className="search-box">
+                    <Search size={14} />
+                    <input
+                      type="text"
+                      placeholder="Buscar por número o nombre de asistente..."
+                      value={transparencySearch}
+                      onChange={e => setTransparencySearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="transparency-grid">
+                  {raffleParticipants
+                    .filter(p => {
+                      if (!transparencySearch.trim()) return true
+                      const q = transparencySearch.toLowerCase()
+                      return (
+                        p.ticketNumber.includes(q) ||
+                        p.ticket.attendee_name?.toLowerCase().includes(q) ||
+                        p.order?.buyer_full_name?.toLowerCase().includes(q)
+                      )
+                    })
+                    .map(p => {
+                      const hasWon = winnersHistory.some(w => w.participant.ticket.id === p.ticket.id)
+                      const isEligibleNow = eligibleParticipants.some(e => e.ticket.id === p.ticket.id)
+
+                      return (
+                        <div
+                          key={p.ticket.id}
+                          className={`transparency-item ${hasWon ? 'item-won' : ''}`}
+                          title={`${p.ticket.attendee_name} - ${p.isCheckedIn ? 'Ingresó' : 'Sin ingreso'}`}
+                        >
+                          <div>
+                            <span className="transparency-num">N° {p.ticketNumber}</span>
+                            <div style={{ color: '#cfd8e3', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }}>
+                              {p.ticket.attendee_name}
+                            </div>
+                          </div>
+                          <div>
+                            {hasWon ? (
+                              <span style={{ fontSize: '10px', color: '#fbbf24', fontWeight: 700 }}>🏆 Ganó</span>
+                            ) : p.isCheckedIn ? (
+                              <span style={{ fontSize: '10px', color: '#10b981', fontWeight: 700 }}>🟢 Presente</span>
+                            ) : (
+                              <span style={{ fontSize: '10px', color: '#8496ad' }}>⚪ {isEligibleNow ? 'Participa' : 'Pendiente'}</span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                </div>
+              </div>
+            )}
           </div>
         </section>
       )}
