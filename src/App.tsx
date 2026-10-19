@@ -217,7 +217,7 @@ function App() {
           if (typeof count === 'number' && !isNaN(count)) {
             nextTicketNumber = count + 1
           }
-        } catch {}
+        } catch { }
       }
 
       // Generar tickets con números limpios y correlativos (ej: 001, 002...)
@@ -227,10 +227,10 @@ function App() {
         const uuidToken = (typeof crypto !== 'undefined' && crypto.randomUUID)
           ? crypto.randomUUID()
           : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-              const r = (Math.random() * 16) | 0
-              const v = c === 'x' ? r : (r & 0x3) | 0x8
-              return v.toString(16)
-            })
+            const r = (Math.random() * 16) | 0
+            const v = c === 'x' ? r : (r & 0x3) | 0x8
+            return v.toString(16)
+          })
 
         const attendeeName = (buyer.attendees && buyer.attendees[i] && buyer.attendees[i].trim())
           ? buyer.attendees[i].trim()
@@ -243,7 +243,7 @@ function App() {
           orderId: displayOrderId,
           eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
           date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
+          venue: 'Andes Talleres· Godoy Cruz, Mendoza',
         }
       })
 
@@ -803,8 +803,8 @@ function App() {
           </div>
         </div>
         <div className="footer-right">
-          <div>ORGULLO AZULGRANA DESDE 1932 <b>✳</b> SOMOS FAMILIA</div>
-          <button 
+          <div>ORGULLO AZULGRANA DESDE 1933 <b>✳</b> SOMOS FAMILIA</div>
+          <button
             className="footer-admin-btn"
             onClick={handleOpenAdmin}
           >
