@@ -1166,22 +1166,91 @@
   }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 640px) {
   .admin-dashboard {
     padding: 16px 12px 60px;
-  }
-  .admin-stats-grid {
-    grid-template-columns: 1fr;
   }
   .dashboard-header {
     flex-direction: column;
     align-items: flex-start;
+    gap: 14px;
+    padding-bottom: 16px;
   }
   .dash-top-actions {
     width: 100%;
-    justify-content: space-between;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-start;
+  }
+  .dash-top-actions button,
+  .dash-top-actions span {
+    font-size: 11px;
+  }
+  .dash-tabs {
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+    gap: 6px;
+    padding-bottom: 4px;
+  }
+  .dash-tabs button {
+    padding: 10px 14px;
+    font-size: 12px;
+  }
+  .admin-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
   }
   .scanner-card {
-    padding: 18px 14px;
+    padding: 16px 12px;
+  }
+  .camera-viewport-wrap {
+    max-height: 320px;
+  }
+  .table-controls-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding: 14px 12px;
+  }
+  .search-box {
+    max-width: 100%;
+  }
+  .filter-chips {
+    width: 100%;
+  }
+  .login-form input {
+    font-size: 16px !important;
+    height: 48px;
+  }
+}
+
+@media (max-width: 480px) {
+  .scan-result-card {
+    flex-direction: column;
+    text-align: center;
+    gap: 12px;
+    padding: 16px 12px;
+  }
+  .result-info-col {
+    align-items: center;
+  }
+  .btn-start-camera {
+    width: 100%;
+    justify-content: center;
+    font-size: 13px;
+    padding: 14px 18px;
+  }
+  .manual-input-row {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .manual-input-row button {
+    height: 44px;
+    width: 100%;
+  }
+  .admin-login {
+    padding: 24px 16px;
   }
 }

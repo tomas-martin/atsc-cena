@@ -3,7 +3,7 @@ import {
   ArrowRight, ArrowLeft, CircleHelp,
   Minus, Plus, ShieldCheck, Ticket,
   WalletCards, Calendar, MapPin, Users,
-  RefreshCw, Check, Copy, MessageCircle, AlertCircle, LockKeyhole
+  RefreshCw, Check, Copy, MessageCircle, AlertCircle
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import AdminPage from './AdminPage'
@@ -300,12 +300,6 @@ function App() {
 
   return (
     <div className="site-shell">
-      {/* ── Banner Superior ── */}
-      <div className="announcement">
-        <span className="ann-badge">ATSC</span>
-        <span>CENA DE FIN DE AÑO 2026 · ANDES TALLERES SPORT CLUB</span>
-      </div>
-
       {/* ── Navbar ── */}
       <header className="navbar">
         <div className="brand" onClick={() => setCurrentStep('fiesta')} style={{ cursor: 'pointer' }}>
@@ -340,10 +334,6 @@ function App() {
         </div>
 
         <div className="nav-actions">
-          <button className="nav-admin-btn" onClick={handleOpenAdmin} title="Ingreso al Panel Administrador">
-            <LockKeyhole size={13} />
-            <span>Admin</span>
-          </button>
           {currentStep === 'fiesta' && (
             <button className="nav-cta" onClick={() => setCurrentStep('entradas_datos')}>
               Comprar Entradas <ArrowRight size={15} />

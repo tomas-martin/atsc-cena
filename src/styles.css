@@ -88,47 +88,22 @@ button {
 }
 
 /* ══════════════════════════════════════════════════════════
-   BARRA SUPERIOR (ANNOUNCEMENT)
-   ══════════════════════════════════════════════════════════ */
-.announcement {
-  background: var(--red-talleres);
-  color: #fff;
-  height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  padding: 0 16px;
-  text-align: center;
-}
-
-.ann-badge {
-  background: rgba(0, 0, 0, 0.3);
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 9px;
-  letter-spacing: 2px;
-}
-
-/* ══════════════════════════════════════════════════════════
    NAVBAR & STEPPER
    ══════════════════════════════════════════════════════════ */
 .navbar {
-  height: 74px;
+  height: 72px;
   background: rgba(10, 21, 36, 0.95);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--navy-card-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 max(calc((100vw - 1240px) / 2), 24px);
+  padding: 0 clamp(16px, 4vw, 36px);
   position: sticky;
   top: 0;
   z-index: 100;
+  transition: height 0.2s;
 }
 
 .brand {
@@ -136,6 +111,7 @@ button {
   align-items: center;
   gap: 12px;
   user-select: none;
+  min-width: 0;
 }
 
 .brand-shield {
@@ -246,30 +222,13 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-shrink: 0;
 }
 
-.nav-admin-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #c2cad7;
-  padding: 8px 14px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.nav-admin-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.3);
+.nav-cta:hover {
+  background: var(--red-hover);
   transform: translateY(-1px);
+  box-shadow: 0 6px 20px var(--red-glow);
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -371,20 +330,21 @@ button {
   position: relative;
   z-index: 1;
   font-family: 'Oswald', sans-serif;
-  font-size: clamp(52px, 8.5vw, 88px);
+  font-size: clamp(34px, 8.5vw, 84px);
   font-weight: 700;
-  line-height: 0.95;
+  line-height: 1.02;
   letter-spacing: 1.5px;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   text-transform: uppercase;
   text-shadow: 0 4px 25px rgba(0, 0, 0, 0.6);
+  word-break: break-word;
 }
 
 .fiesta-year {
   display: block;
-  font-size: clamp(38px, 6vw, 64px);
+  font-size: clamp(26px, 6vw, 58px);
   color: #ffffff;
-  letter-spacing: 4px;
+  letter-spacing: 3px;
 }
 
 .text-red {
@@ -399,13 +359,15 @@ button {
   align-items: center;
   justify-content: center;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 14px;
   background: rgba(10, 21, 36, 0.85);
   border: 1px solid var(--navy-card-border);
   backdrop-filter: blur(8px);
-  padding: 16px 28px;
+  -webkit-backdrop-filter: blur(8px);
+  padding: 14px 24px;
   border-radius: 40px;
-  margin-bottom: 36px;
+  margin-bottom: 32px;
+  max-width: 100%;
 }
 
 .info-item {
@@ -440,23 +402,26 @@ button {
   flex-direction: column;
   align-items: center;
   gap: 14px;
+  width: 100%;
 }
 
 .btn-huge-red {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: 12px;
   background: var(--red-talleres);
   color: #fff;
-  padding: 20px 48px;
+  padding: clamp(16px, 3.5vw, 20px) clamp(24px, 4vw, 44px);
   border-radius: 8px;
-  font-size: 17px;
+  font-size: clamp(13px, 3.5vw, 16px);
   font-weight: 900;
   letter-spacing: 1.2px;
   text-transform: uppercase;
   transition: all 0.25s;
   box-shadow: 0 8px 30px var(--red-glow);
+  max-width: 100%;
+  text-decoration: none;
 }
 
 .btn-huge-red:hover:not(:disabled) {
@@ -1368,7 +1333,7 @@ button {
   background: #040911;
   color: #fff;
   border-top: 1px solid var(--navy-card-border);
-  padding: 30px max(calc((100vw - 1240px) / 2), 24px);
+  padding: 32px clamp(16px, 4vw, 36px);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1376,15 +1341,53 @@ button {
   flex-wrap: wrap;
 }
 
-.footer > div {
-  font-size: 9px;
+.footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  user-select: none;
+}
+
+.footer-right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+
+.footer > div, .footer-right > div {
+  font-size: 10px;
   font-weight: 700;
   letter-spacing: 1.5px;
   color: var(--text-muted);
 }
 
-.footer b {
+.footer b, .footer-right b {
   color: var(--red-talleres);
+}
+
+.footer-admin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #c2cad7;
+  padding: 8px 18px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.footer-admin-btn:hover {
+  background: var(--red-talleres);
+  border-color: var(--red-talleres);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px var(--red-glow);
 }
 
 .footer > small {
@@ -1393,63 +1396,6 @@ button {
   padding-top: 14px;
   color: var(--text-dim);
   font-size: 11px;
-}
-
-/* ══════════════════════════════════════════════════════════
-   RESPONSIVE DESIGN
-   ══════════════════════════════════════════════════════════ */
-@media (max-width: 960px) {
-  .fiesta-meta-cards {
-    grid-template-columns: 1fr;
-  }
-  .fiesta-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-  .payment-grid-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 768px) {
-  .nav-stepper {
-    display: none;
-  }
-  .fiesta-grid {
-    grid-template-columns: 1fr;
-  }
-  .form-grid-modern {
-    grid-template-columns: 1fr;
-  }
-  .form-actions {
-    flex-direction: column-reverse;
-    gap: 14px;
-  }
-  .form-actions button {
-    width: 100%;
-  }
-  .footer {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-}
-
-@media (max-width: 480px) {
-  .fiesta-hero {
-    padding: 40px 16px 50px;
-  }
-  .btn-huge-red {
-    width: 100%;
-    padding: 16px 20px;
-    font-size: 13px;
-  }
-  .ticket-counter-box {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 16px;
-  }
-  .official-ticket-card {
-    min-width: 100%;
-  }
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1695,5 +1641,257 @@ button {
 
 .btn-mini-copy:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* ══════════════════════════════════════════════════════════
+   RESPONSIVE DESIGN SYSTEM (ALL DEVICES)
+   ══════════════════════════════════════════════════════════ */
+
+/* Tablets & Pantallas medianas (<= 960px) */
+@media (max-width: 960px) {
+  .nav-stepper {
+    display: none;
+  }
+  .payment-grid-layout {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+/* Móviles grandes & Tablets chicas (<= 768px) */
+@media (max-width: 768px) {
+  .navbar {
+    height: 66px;
+    padding: 0 16px;
+  }
+  .form-grid-modern {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .form-actions {
+    flex-direction: column-reverse;
+    gap: 12px;
+  }
+  .form-actions button,
+  .form-actions .btn-secondary {
+    width: 100%;
+    justify-content: center;
+    height: 48px;
+  }
+  .footer {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 18px;
+    padding: 30px 16px 36px;
+  }
+  .footer-brand {
+    justify-content: center;
+  }
+  .footer-right {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 14px;
+  }
+  .footer > div, .footer-right > div {
+    text-align: center;
+  }
+  .footer > small {
+    text-align: center;
+  }
+}
+
+/* Teléfonos estándar (<= 640px) */
+@media (max-width: 640px) {
+  .fiesta-hero {
+    padding: 24px 14px 38px;
+  }
+  .fiesta-hero-glow {
+    width: 260px;
+    height: 180px;
+    filter: blur(45px);
+  }
+  .fiesta-title {
+    margin-bottom: 20px;
+  }
+  .fiesta-quick-info {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    border-radius: 14px;
+    padding: 14px 16px;
+    width: 100%;
+    max-width: 440px;
+  }
+  .info-divider {
+    display: none;
+  }
+  .info-item {
+    justify-content: flex-start;
+    font-size: 13px;
+    gap: 10px;
+  }
+  .btn-huge-red {
+    width: 100%;
+    max-width: 380px;
+    padding: 16px 20px;
+    font-size: 14px;
+  }
+  .step-section {
+    padding: 20px 14px 60px;
+  }
+  .step-header {
+    margin-bottom: 22px;
+  }
+  .dark-card {
+    padding: 18px 14px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+  .form-field input {
+    font-size: 16px !important;
+    height: 48px;
+  }
+  .whatsapp-cta-card {
+    padding: 20px 14px;
+    gap: 16px;
+  }
+  .wa-card-header {
+    gap: 12px;
+  }
+  .wa-icon-circle {
+    width: 46px;
+    height: 46px;
+  }
+  .wa-card-header h3 {
+    font-size: 16px;
+  }
+  .wa-card-header p {
+    font-size: 12px;
+  }
+  .btn-whatsapp-huge {
+    width: 100%;
+    padding: 16px 14px;
+    font-size: 13.5px;
+    text-align: center;
+  }
+  .tickets-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+}
+
+/* Teléfonos medianos y compactos (<= 520px) */
+@media (max-width: 520px) {
+  .ticket-counter-box {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+    text-align: center;
+    padding: 16px 14px;
+  }
+  .counter-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .stepper-modern {
+    margin: 0 auto;
+  }
+  .ticket-total-calc {
+    padding-top: 6px;
+  }
+  .attendee-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+  .att-num {
+    width: auto;
+    font-size: 11px;
+  }
+  .attendee-row input {
+    font-size: 16px !important;
+    height: 44px;
+  }
+  .alias-highlight-box {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    gap: 14px;
+    padding: 16px 14px;
+  }
+  .alias-info-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .alias-code {
+    font-size: clamp(17px, 5.2vw, 22px);
+    word-break: break-all;
+    text-align: center;
+  }
+  .btn-copy-alias {
+    width: 100%;
+    justify-content: center;
+    height: 46px;
+  }
+  .cbu-row {
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 11.5px;
+  }
+  .copy-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .cbu-row code {
+    word-break: break-all;
+    font-size: 11px;
+  }
+  .sum-row {
+    font-size: 12px;
+  }
+}
+
+/* Teléfonos ultra-pequeños (<= 380px: iPhone SE, pantallas estrechas) */
+@media (max-width: 380px) {
+  .navbar {
+    padding: 0 10px;
+    height: 60px;
+  }
+  .brand {
+    gap: 8px;
+  }
+  .brand-name {
+    font-size: 10.5px;
+    letter-spacing: 0.8px;
+  }
+  .brand-name span {
+    font-size: 7px;
+    letter-spacing: 1.2px;
+  }
+  .nav-cta {
+    padding: 7px 10px;
+    font-size: 9.5px;
+    gap: 4px;
+  }
+  .card-top-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .card-right-badge {
+    margin-left: 0;
+  }
+  .btn-huge-red {
+    font-size: 12.5px;
+    padding: 15px 14px;
+  }
+  .footer-admin-btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
