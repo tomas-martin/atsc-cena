@@ -272,13 +272,17 @@ function App() {
             .from('tickets')
             .select('ticket_number')
             .not('ticket_number', 'is', null)
+            .gt('ticket_number', 0)
             .order('ticket_number', { ascending: false })
             .limit(1)
 
           if (highestTicket && highestTicket.length > 0 && typeof highestTicket[0].ticket_number === 'number') {
             nextTicketNumber = highestTicket[0].ticket_number + 1
           } else {
-            const { count } = await supabase.from('tickets').select('*', { count: 'exact', head: true })
+            const { count } = await supabase
+              .from('tickets')
+              .select('*', { count: 'exact', head: true })
+              .gt('ticket_number', 0)
             if (typeof count === 'number' && !isNaN(count)) {
               nextTicketNumber = count + 1
             }
@@ -287,7 +291,7 @@ function App() {
       }
 
       // 3. Generar tickets:
-      // - Jugadores: NO tienen número de sorteo (ticketNumber: 'JUGADOR', DB ticket_number: null)
+      // - Jugadores: NO tienen número de sorteo (ticketNumber: 'JUGADOR', DB ticket_number: null o 0)
       // - Acompañantes: SÍ tienen número correlativo de sorteo (ej: 001, 002...)
       let companionRaffleCount = 0
       const tickets: IssuedTicket[] = Array.from({ length: quantity }, (_, i) => {
@@ -344,9 +348,20 @@ function App() {
         }))
         const { error: ticketErr } = await supabase.from('tickets').insert(ticketRows)
         if (ticketErr) {
-          // Si ticket_number tiene restricción o no fue creado aún, reintentar sin él
-          const fallbackRows = ticketRows.map(({ ticket_number, ...rest }) => rest)
-          await supabase.from('tickets').insert(fallbackRows)
+          // Si ticket_number viola restricción NOT NULL (código 23502), reintentar asignando 0 a jugadores
+          if (ticketErr.code === '23502') {
+            const retryRows = ticketRows.map(r => ({
+              ...r,
+              ticket_number: r.ticket_number ?? 0
+            }))
+            await supabase.from('tickets').insert(retryRows)
+          } else if (ticketErr.code === '42703') {
+            // Si la columna no existe aún en la base de datos
+            const fallbackRows = ticketRows.map(({ ticket_number, ...rest }) => rest)
+            await supabase.from('tickets').insert(fallbackRows)
+          } else {
+            console.error('Error insertando tickets:', ticketErr)
+          }
         }
       }
 

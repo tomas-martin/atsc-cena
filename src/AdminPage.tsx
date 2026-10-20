@@ -177,14 +177,14 @@ export default function AdminPage({
 
   // Función para determinar si una entrada es de jugador (no cuenta para el sorteo)
   function isPlayerTicket(ticket: { attendee_name?: string; ticket_number?: number | null }): boolean {
-    return ticket.ticket_number == null || /jugador/i.test(ticket.attendee_name || '')
+    return ticket.ticket_number == null || ticket.ticket_number <= 0 || /jugador/i.test(ticket.attendee_name || '')
   }
 
   // Mapeo correlativo estable para sorteo (ÚNICAMENTE para acompañantes)
   const ticketNumberMap = useMemo(() => {
     const companionTickets = tickets.filter(t => !isPlayerTicket(t))
     const sorted = [...companionTickets].sort((a, b) => {
-      if (a.ticket_number && b.ticket_number) {
+      if (a.ticket_number && b.ticket_number && a.ticket_number !== b.ticket_number) {
         return a.ticket_number - b.ticket_number
       }
       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -192,7 +192,7 @@ export default function AdminPage({
 
     const map = new Map<string, string>()
     sorted.forEach((t, index) => {
-      const num = t.ticket_number ? t.ticket_number : (index + 1)
+      const num = (t.ticket_number && t.ticket_number > 0) ? t.ticket_number : (index + 1)
       map.set(t.id, String(num).padStart(3, '0'))
     })
     return map
@@ -202,7 +202,7 @@ export default function AdminPage({
     if (isPlayerTicket(ticket)) {
       return null
     }
-    if (ticket.ticket_number) {
+    if (ticket.ticket_number && ticket.ticket_number > 0) {
       return String(ticket.ticket_number).padStart(3, '0')
     }
     const mapped = ticketNumberMap.get(ticket.id)
@@ -1145,13 +1145,17 @@ export default function AdminPage({
             .from('tickets')
             .select('ticket_number')
             .not('ticket_number', 'is', null)
+            .gt('ticket_number', 0)
             .order('ticket_number', { ascending: false })
             .limit(1)
 
           if (highestTicket && highestTicket.length > 0 && typeof highestTicket[0].ticket_number === 'number') {
             nextTicketNumber = highestTicket[0].ticket_number + 1
           } else {
-            const { count } = await supabase.from('tickets').select('*', { count: 'exact', head: true })
+            const { count } = await supabase
+              .from('tickets')
+              .select('*', { count: 'exact', head: true })
+              .gt('ticket_number', 0)
             if (typeof count === 'number' && !isNaN(count)) {
               nextTicketNumber = count + 1
             }
@@ -1213,8 +1217,18 @@ export default function AdminPage({
         }))
         const { error: ticketErr } = await supabase.from('tickets').insert(ticketRows)
         if (ticketErr) {
-          const fallbackRows = ticketRows.map(({ ticket_number, ...rest }) => rest)
-          await supabase.from('tickets').insert(fallbackRows)
+          if (ticketErr.code === '23502') {
+            const retryRows = ticketRows.map(r => ({
+              ...r,
+              ticket_number: r.ticket_number ?? 0
+            }))
+            await supabase.from('tickets').insert(retryRows)
+          } else if (ticketErr.code === '42703') {
+            const fallbackRows = ticketRows.map(({ ticket_number, ...rest }) => rest)
+            await supabase.from('tickets').insert(fallbackRows)
+          } else {
+            console.error('Error al guardar tickets presenciales:', ticketErr)
+          }
         }
       }
 
