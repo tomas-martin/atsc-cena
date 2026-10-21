@@ -1,6 +1,48 @@
 /* ══════════════════════════════════════════════════════════
-   ESTILOS DEL PANEL DE ADMINISTRACIÓN Y ESCÁNER QR
+   ESTILOS GLOBALES: SCROLLBARS Y REMOCIÓN DE SPINNERS
    ══════════════════════════════════════════════════════════ */
+/* Quitar flechitas (spinners) de todos los inputs numéricos */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* Scrollbars modernos estilo ATSC */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1c2e47 #060d17;
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #060d17;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1c2e47;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2b456b;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
 
 /* Login al panel */
 .admin-wrap {
@@ -314,11 +356,40 @@
 /* Tabs principales */
 .dash-tabs {
   display: flex;
-  gap: 10px;
+  gap: 8px;
+  align-items: center;
   border-bottom: 1px solid #182d49;
   margin-bottom: 26px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #1e3a5f #080f1a;
+  -webkit-overflow-scrolling: touch;
+}
+
+.dash-tabs::-webkit-scrollbar {
+  height: 5px;
+}
+
+.dash-tabs::-webkit-scrollbar-track {
+  background: #080f1a;
+  border-radius: 999px;
+}
+
+.dash-tabs::-webkit-scrollbar-thumb {
+  background: #1c2e47;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.dash-tabs::-webkit-scrollbar-thumb:hover {
+  background: #d92736;
+}
+
+.dash-tabs::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .dash-tabs button {
@@ -327,28 +398,32 @@
   gap: 8px;
   background: transparent;
   color: #8496ad;
-  border: none;
+  border: 1px solid transparent;
   border-bottom: 2px solid transparent;
-  padding: 12px 18px;
+  padding: 10px 15px;
+  border-radius: 6px 6px 0 0;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dash-tabs button:hover {
   color: #fff;
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .dash-tabs button.active {
   color: #fff;
   border-bottom-color: #d92736;
+  background: rgba(217, 39, 54, 0.08);
 }
 
 .tab-scanner-highlight.active {
   color: #ff6874;
   border-bottom-color: #d92736;
+  background: rgba(217, 39, 54, 0.08);
 }
 
 /* ══════════════════════════════════════════════════════════

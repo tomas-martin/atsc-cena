@@ -36,6 +36,130 @@
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #1c2e47 #060d17;
+}
+
+/* Scrollbars modernos estilo ATSC */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: #060d17;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1c2e47;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #2b456b;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+/* Quitar flechitas (spinners) de todos los inputs numéricos */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* ══════════════════════════════════════════════════════════
+   TOOLTIPS DE VALIDACIÓN PERSONALIZADOS (ESTILO ATSC)
+   ══════════════════════════════════════════════════════════ */
+.input-with-tooltip-wrap {
+  position: relative;
+  width: 100%;
+}
+
+.input-field-error {
+  border-color: #d92736 !important;
+  box-shadow: 0 0 0 3px rgba(217, 39, 54, 0.28) !important;
+  animation: shakeShort 0.35s ease-in-out;
+}
+
+@keyframes shakeShort {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  50% { transform: translateX(4px); }
+  75% { transform: translateX(-2px); }
+}
+
+.custom-validation-bubble {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 8px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #132238 0%, #0b1524 100%);
+  border: 1px solid #d92736;
+  border-radius: 8px;
+  padding: 8px 14px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 10px 25px -4px rgba(0, 0, 0, 0.7), 0 0 14px rgba(217, 39, 54, 0.35);
+  animation: bubblePop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.custom-validation-bubble .bubble-arrow {
+  position: absolute;
+  top: -6px;
+  left: 20px;
+  width: 10px;
+  height: 10px;
+  background: #132238;
+  border-left: 1px solid #d92736;
+  border-top: 1px solid #d92736;
+  transform: rotate(45deg);
+}
+
+.custom-validation-bubble .bubble-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: rgba(217, 39, 54, 0.2);
+  border: 1px solid rgba(217, 39, 54, 0.6);
+  border-radius: 50%;
+  color: #ff6874;
+  font-size: 11px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.custom-validation-bubble .bubble-text {
+  letter-spacing: 0.2px;
+}
+
+@keyframes bubblePop {
+  0% {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 body {

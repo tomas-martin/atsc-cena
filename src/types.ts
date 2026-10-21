@@ -1,4 +1,4 @@
-export type Step = 'fiesta' | 'entradas_datos' | 'pago' | 'confirmacion'
+export type Step = 'fiesta' | 'entradas' | 'datos' | 'pago' | 'confirmacion' | 'entradas_datos'
 
 export type PaymentMethod = 'mercadopago' | 'naranja_x' | 'transferencia'
 export type OrderStatus = 'pendiente' | 'pagado' | 'rechazado' | 'cancelado'

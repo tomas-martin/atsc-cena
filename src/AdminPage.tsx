@@ -1411,7 +1411,7 @@ export default function AdminPage({
             </div>
           </div>
 
-          <form onSubmit={handleAuthLogin} className="login-form">
+          <form onSubmit={handleAuthLogin} className="login-form" noValidate>
             <label>
               Usuario
               <input
@@ -1470,6 +1470,9 @@ export default function AdminPage({
   const totalRevenue = orders.filter(o => o.status === 'pagado').reduce((sum, o) => sum + o.total_ars, 0)
   const pendingOrders = orders.filter(o => o.status === 'pendiente').length
 
+  // Mapa de órdenes para búsqueda rápida y visualización de DNI del comprador
+  const orderMap = useMemo(() => new Map(orders.map(o => [o.id, o])), [orders])
+
   // Filtrado de tickets (ordenados de forma correlativa para sorteo)
   const filteredTickets = [...tickets]
     .sort((a, b) => {
@@ -1485,9 +1488,15 @@ export default function AdminPage({
       const q = searchQuery.toLowerCase().trim()
       const ticketNum = getTicketDisplayNumber(t) || ''
       const isPl = isPlayerTicket(t)
+      const order = orderMap.get(t.order_id)
+      const buyerDni = (order?.buyer_dni || '').toLowerCase().trim()
+      const buyerName = (order?.buyer_full_name || '').toLowerCase()
+
       const matchesSearch =
         !q ||
         t.attendee_name?.toLowerCase().includes(q) ||
+        buyerDni.includes(q) ||
+        buyerName.includes(q) ||
         t.qr_token?.toLowerCase().includes(q) ||
         t.id?.toLowerCase().includes(q) ||
         (isPl && (q.includes('jugador') || q.includes('sorteo'))) ||
@@ -1993,7 +2002,7 @@ export default function AdminPage({
               <Search size={16} />
               <input
                 type="text"
-                placeholder="Buscar por asistente, token o ID..."
+                placeholder="Buscar por DNI, asistente, titular, token o N°..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
               />
@@ -2061,7 +2070,23 @@ export default function AdminPage({
                         </span>
                       )}
                     </td>
-                    <td><strong>{ticket.attendee_name}</strong></td>
+                    <td>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <strong>{ticket.attendee_name}</strong>
+                        {(() => {
+                          const order = orderMap.get(ticket.order_id)
+                          if (!order) return null
+                          return (
+                            <span style={{ fontSize: '11px', color: '#8496ad', marginTop: '3px' }}>
+                              DNI: <strong style={{ color: '#cbd5e1' }}>{order.buyer_dni || '—'}</strong>
+                              {order.buyer_full_name && order.buyer_full_name.trim().toLowerCase() !== ticket.attendee_name.trim().toLowerCase() && (
+                                <span style={{ color: '#627d98' }}> · Titular: {order.buyer_full_name}</span>
+                              )}
+                            </span>
+                          )
+                        })()}
+                      </div>
+                    </td>
                     <td><small className="token-cell">{ticket.qr_token.slice(0, 16)}...</small></td>
                     <td>
                       {ticket.status === 'used' ? (

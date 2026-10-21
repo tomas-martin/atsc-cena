@@ -109,6 +109,7 @@ function App() {
   // ── Procesamiento y Confirmación ──
   const [busy, setBusy] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [orderConfirmation, setOrderConfirmation] = useState<OrderConfirmation | null>(null)
   const [confirmationQrUrls, setConfirmationQrUrls] = useState<Record<string, string>>({})
 
@@ -153,6 +154,13 @@ function App() {
 
   const updateBuyer = (field: keyof BuyerDetails, value: string) => {
     setBuyer(current => ({ ...current, [field]: value }))
+    if (fieldErrors[field]) {
+      setFieldErrors(prev => {
+        const next = { ...prev }
+        delete next[field]
+        return next
+      })
+    }
   }
 
   // Copiar alias al portapapeles
@@ -162,38 +170,87 @@ function App() {
     setTimeout(() => setCopiedAlias(false), 2500)
   }
 
-  // ── Validación paso 2: Entradas y Datos ──
-  const handleProceedToPayment = (e: React.FormEvent) => {
-    e.preventDefault()
+  // ── Validación paso 1: Selección de Entradas ──
+  const handleProceedToBuyerData = (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
     setErrorMessage('')
+    const errors: Record<string, string> = {}
 
-    if (!buyer.fullName.trim() || !buyer.dni.trim() || !buyer.email.trim()) {
-      setErrorMessage('Por favor completá todos los datos obligatorios del responsable.')
-      return
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyer.email)) {
-      setErrorMessage('Ingresá un correo electrónico válido para recibir las entradas con código QR.')
-      return
-    }
-    if (buyer.dni.length < 7) {
-      setErrorMessage('Ingresá un número de DNI válido.')
-      return
-    }
     if (quantity < 1) {
       setErrorMessage('Debés seleccionar al menos una entrada para continuar.')
       return
     }
 
-    // Validar que cada jugador tenga su nombre y apellido
+    // Validar que cada jugador cargado tenga su nombre y apellido
     for (let i = 0; i < players.length; i++) {
       if (!players[i].name.trim()) {
-        setErrorMessage(
+        errors[`player_${i}`] =
           players.length === 1
-            ? 'Por favor ingresá el nombre y apellido del jugador.'
-            : `Por favor ingresá el nombre y apellido del Jugador #${i + 1}.`
-        )
-        return
+            ? 'Completá el nombre y apellido del jugador'
+            : `Completá el nombre del Jugador #${i + 1}`
       }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setErrorMessage('Por favor completá los nombres de los jugadores ingresados.')
+      const firstKey = Object.keys(errors)[0]
+      setTimeout(() => {
+        const el = document.getElementById(`field-${firstKey}`)
+        if (el) {
+          el.focus()
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 50)
+      return
+    }
+
+    setFieldErrors({})
+    setCurrentStep('datos')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  // ── Validación paso 2: Datos de Contacto del Responsable ──
+  const handleProceedToPayment = (e: React.FormEvent) => {
+    e.preventDefault()
+    setErrorMessage('')
+    const errors: Record<string, string> = {}
+
+    if (!buyer.fullName.trim()) {
+      errors.fullName = 'Completá este campo con tu nombre y apellido'
+    }
+
+    if (!buyer.dni.trim()) {
+      errors.dni = 'Completá este campo con tu número de DNI'
+    } else if (buyer.dni.length < 7) {
+      errors.dni = 'Ingresá un número de DNI válido (mínimo 7 dígitos)'
+    }
+
+    if (!buyer.email.trim()) {
+      errors.email = 'Completá este campo con tu correo electrónico'
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyer.email)) {
+      errors.email = 'Ingresá un correo electrónico válido'
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors)
+      setErrorMessage('Por favor completá los datos requeridos marcados abajo.')
+      const firstKey = Object.keys(errors)[0]
+      setTimeout(() => {
+        const el = document.getElementById(`field-${firstKey}`)
+        if (el) {
+          el.focus()
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 50)
+      return
+    }
+
+    setFieldErrors({})
+
+    if (quantity < 1) {
+      setErrorMessage('Debés seleccionar al menos una entrada para continuar.')
+      return
     }
 
     setCurrentStep('pago')
@@ -488,25 +545,30 @@ function App() {
             <span className="step-label">Inicio</span>
           </div>
           <span className="step-div">›</span>
-          <div className={`nav-step ${currentStep === 'entradas_datos' ? 'active' : ''}`} onClick={() => { if (currentStep !== 'fiesta') setCurrentStep('entradas_datos') }}>
+          <div className={`nav-step ${currentStep === 'entradas' ? 'active' : ''}`} onClick={() => { if (currentStep !== 'fiesta') setCurrentStep('entradas') }}>
             <span className="step-num">2</span>
             <span className="step-label">Entradas</span>
           </div>
           <span className="step-div">›</span>
-          <div className={`nav-step ${currentStep === 'pago' ? 'active' : ''}`}>
+          <div className={`nav-step ${currentStep === 'datos' ? 'active' : ''}`} onClick={() => { if (currentStep === 'pago') setCurrentStep('datos') }}>
             <span className="step-num">3</span>
+            <span className="step-label">Tus Datos</span>
+          </div>
+          <span className="step-div">›</span>
+          <div className={`nav-step ${currentStep === 'pago' ? 'active' : ''}`}>
+            <span className="step-num">4</span>
             <span className="step-label">Pago</span>
           </div>
           <span className="step-div">›</span>
           <div className={`nav-step ${currentStep === 'confirmacion' ? 'active' : ''}`}>
-            <span className="step-num">4</span>
+            <span className="step-num">5</span>
             <span className="step-label">Comprobante</span>
           </div>
         </div>
 
         <div className="nav-actions">
           {currentStep === 'fiesta' && (
-            <button className="nav-cta" onClick={() => setCurrentStep('entradas_datos')}>
+            <button className="nav-cta" onClick={() => { setCurrentStep('entradas'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
               Comprar Entradas <ArrowRight size={15} />
             </button>
           )}
@@ -554,7 +616,7 @@ function App() {
                 <button
                   className="btn-huge-red"
                   onClick={() => {
-                    setCurrentStep('entradas_datos')
+                    setCurrentStep('entradas')
                     window.scrollTo({ top: 0, behavior: 'smooth' })
                   }}
                 >
@@ -568,20 +630,20 @@ function App() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════
-            SECCIÓN 2: SELECCIÓN DE ENTRADAS Y DATOS DEL COMPRADOR
+            SECCIÓN 2: SELECCIÓN DE ENTRADAS DEL GRUPO
            ══════════════════════════════════════════════════════════════ */}
-        {currentStep === 'entradas_datos' && (
+        {currentStep === 'entradas' && (
           <section className="step-section animate-fade">
             <div className="step-header">
-              <button className="btn-back" onClick={() => setCurrentStep('fiesta')}>
+              <button className="btn-back" onClick={() => { setCurrentStep('fiesta'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
                 <ArrowLeft size={16} /> Volver
               </button>
-              <div className="step-badge">PASO 2 DE 3</div>
-              <h1>Armá tu grupo y completá tus datos</h1>
-              <p>Indicá quiénes van a la fiesta y completá los datos del responsable para recibir los códigos QR.</p>
+              <div className="step-badge">PASO 1 DE 3 · SELECCIÓN DE ENTRADAS</div>
+              <h1>Armá tu grupo y seleccioná tus entradas</h1>
+              <p>Elegí quiénes asistirán al evento: jugadores bonificados, acompañantes mayores y menores.</p>
             </div>
 
-            <form onSubmit={handleProceedToPayment} className="form-container">
+            <div className="form-container">
               {/* 1. SELECCIÓN DE ENTRADAS DEL GRUPO */}
               <div className="dark-card">
                 <div className="card-top-header">
@@ -656,17 +718,43 @@ function App() {
 
                           <div className="player-inputs-row">
                             <div className="form-field">
-                              <label>Nombre y Apellido del Jugador *</label>
-                              <input
-                                type="text"
-                                placeholder="Ej: Mateo Rodríguez"
-                                value={p.name}
-                                onChange={e => {
-                                  const val = e.target.value
-                                  setPlayers(prev => prev.map((item, i) => i === idx ? { ...item, name: val } : item))
-                                }}
-                                required
-                              />
+                              <label htmlFor={`field-player_${idx}`}>Nombre y Apellido del Jugador *</label>
+                              <div className="input-with-tooltip-wrap">
+                                <input
+                                  id={`field-player_${idx}`}
+                                  type="text"
+                                  placeholder="Ej: Mateo Rodríguez"
+                                  className={fieldErrors[`player_${idx}`] ? 'input-field-error' : ''}
+                                  value={p.name}
+                                  onChange={e => {
+                                    const val = e.target.value
+                                    setPlayers(prev => prev.map((item, i) => i === idx ? { ...item, name: val } : item))
+                                    if (fieldErrors[`player_${idx}`]) {
+                                      setFieldErrors(prev => {
+                                        const next = { ...prev }
+                                        delete next[`player_${idx}`]
+                                        return next
+                                      })
+                                    }
+                                  }}
+                                  onFocus={() => {
+                                    if (fieldErrors[`player_${idx}`]) {
+                                      setFieldErrors(prev => {
+                                        const next = { ...prev }
+                                        delete next[`player_${idx}`]
+                                        return next
+                                      })
+                                    }
+                                  }}
+                                />
+                                {fieldErrors[`player_${idx}`] && (
+                                  <div className="custom-validation-bubble" role="alert">
+                                    <div className="bubble-arrow" />
+                                    <span className="bubble-icon">!</span>
+                                    <span className="bubble-text">{fieldErrors[`player_${idx}`]}</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                             <div className="form-field">
                               <label>Categoría / División *</label>
@@ -840,6 +928,102 @@ function App() {
                 </div>
               </div>
 
+              {/* Barra Resumen de Selección */}
+              <div className="dark-card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px', background: 'rgba(10, 21, 36, 0.75)', border: '1px solid #182d49', borderRadius: '10px', padding: '18px 22px' }}>
+                <div>
+                  <div style={{ fontSize: '12px', color: '#8a9ab5', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
+                    Entradas Seleccionadas
+                  </div>
+                  <div style={{ fontSize: '22px', fontWeight: 800, color: '#ffffff', marginTop: '2px' }}>
+                    {quantity} {quantity === 1 ? 'Entrada' : 'Entradas'}
+                    {quantity > 0 && (
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#00d2b4', marginLeft: '10px' }}>
+                        ({players.length > 0 ? `${players.length} Jugador${players.length > 1 ? 'es' : ''}` : ''}
+                        {players.length > 0 && companionCount > 0 ? ' · ' : ''}
+                        {companionCount > 0 ? `${companionCount} Acompañante${companionCount > 1 ? 's' : ''}` : ''}
+                        {(players.length > 0 || companionCount > 0) && childrenCount > 0 ? ' · ' : ''}
+                        {childrenCount > 0 ? `${childrenCount} Menor${childrenCount > 1 ? 'es' : ''}` : ''})
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '12px', color: '#8a9ab5', textTransform: 'uppercase', fontWeight: 700, letterSpacing: '0.5px' }}>
+                    Total Estimado
+                  </div>
+                  <div style={{ fontSize: '26px', fontWeight: 900, color: total > 0 ? '#ff6874' : '#00d2b4', marginTop: '2px' }}>
+                    {total > 0 ? money(total) : '¡GRATIS! ($0)'}
+                  </div>
+                </div>
+              </div>
+
+              {errorMessage && (
+                <div className="error-banner">
+                  <CircleHelp size={18} />
+                  <span>{errorMessage}</span>
+                </div>
+              )}
+
+              <div className="form-actions">
+                <button type="button" className="btn-secondary" onClick={() => { setCurrentStep('fiesta'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+                  <ArrowLeft size={16} /> Volver
+                </button>
+                <button
+                  type="button"
+                  className="btn-huge-red"
+                  onClick={() => handleProceedToBuyerData()}
+                  disabled={quantity === 0}
+                  style={{ opacity: quantity === 0 ? 0.6 : 1 }}
+                >
+                  <span>CONTINUAR A CARGAR DATOS</span>
+                  <ArrowRight size={18} />
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* ══════════════════════════════════════════════════════════════
+            SECCIÓN 2B: DATOS DEL RESPONSABLE Y RESUMEN DEL PEDIDO
+           ══════════════════════════════════════════════════════════════ */}
+        {(currentStep === 'datos' || currentStep === 'entradas_datos') && (
+          <section className="step-section animate-fade">
+            <div className="step-header">
+              <button className="btn-back" onClick={() => { setCurrentStep('entradas'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+                <ArrowLeft size={16} /> Modificar Entradas
+              </button>
+              <div className="step-badge">PASO 2 DE 3 · TUS DATOS</div>
+              <h1>Cargá tus datos de contacto</h1>
+              <p>Persona que gestiona la compra (papá, mamá o titular) y a quien se enviarán las entradas con QR.</p>
+            </div>
+
+            {/* Resumen compacto de las entradas seleccionadas */}
+            <div className="dark-card" style={{ padding: '14px 20px', background: 'rgba(10, 21, 36, 0.65)', border: '1px solid #182d49', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '22px' }}>🎟️</span>
+                <div>
+                  <strong style={{ fontSize: '15px', color: '#fff' }}>
+                    {quantity} {quantity === 1 ? 'Entrada seleccionada' : 'Entradas seleccionadas'}
+                  </strong>
+                  <div style={{ fontSize: '12px', color: '#8a9ab5', marginTop: '2px' }}>
+                    {players.length > 0 && `${players.length} Jugador(es) bonificado(s) `}
+                    {companionCount > 0 && `· ${companionCount} Acompañante(s) con sorteo `}
+                    {childrenCount > 0 && `· ${childrenCount} Menor(es) <3 `}
+                    · Total a pagar: <b style={{ color: total > 0 ? '#ff6874' : '#00d2b4' }}>{money(total)}</b>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-dash-outline"
+                style={{ padding: '6px 14px', fontSize: '12px', color: '#cbd5e1', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+                onClick={() => { setCurrentStep('entradas'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              >
+                ✏️ Modificar cantidad
+              </button>
+            </div>
+
+            <form onSubmit={handleProceedToPayment} className="form-container" noValidate>
               {/* 2. DATOS DEL RESPONSABLE DE LA COMPRA */}
               <div className="dark-card">
                 <div className="card-top-header">
@@ -852,26 +1036,64 @@ function App() {
 
                 <div className="form-grid-modern">
                   <div className="form-field full">
-                    <label>Nombre y Apellido Completo *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Ej: Martín Rodríguez"
-                      value={buyer.fullName}
-                      onChange={e => updateBuyer('fullName', e.target.value)}
-                    />
+                    <label htmlFor="field-fullName">Nombre y Apellido Completo *</label>
+                    <div className="input-with-tooltip-wrap">
+                      <input
+                        id="field-fullName"
+                        type="text"
+                        placeholder="Ej: Martín Rodríguez"
+                        className={fieldErrors.fullName ? 'input-field-error' : ''}
+                        value={buyer.fullName}
+                        onChange={e => updateBuyer('fullName', e.target.value)}
+                        onFocus={() => {
+                          if (fieldErrors.fullName) {
+                            setFieldErrors(prev => {
+                              const next = { ...prev }
+                              delete next.fullName
+                              return next
+                            })
+                          }
+                        }}
+                      />
+                      {fieldErrors.fullName && (
+                        <div className="custom-validation-bubble" role="alert">
+                          <div className="bubble-arrow" />
+                          <span className="bubble-icon">!</span>
+                          <span className="bubble-text">{fieldErrors.fullName}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="form-field">
-                    <label>DNI del Responsable *</label>
-                    <input
-                      type="text"
-                      required
-                      inputMode="numeric"
-                      placeholder="Sin puntos ni espacios"
-                      value={buyer.dni}
-                      onChange={e => updateBuyer('dni', e.target.value.replace(/\D/g, '').slice(0, 8))}
-                    />
+                    <label htmlFor="field-dni">DNI del Responsable *</label>
+                    <div className="input-with-tooltip-wrap">
+                      <input
+                        id="field-dni"
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Sin puntos ni espacios"
+                        className={fieldErrors.dni ? 'input-field-error' : ''}
+                        value={buyer.dni}
+                        onChange={e => updateBuyer('dni', e.target.value.replace(/\D/g, '').slice(0, 8))}
+                        onFocus={() => {
+                          if (fieldErrors.dni) {
+                            setFieldErrors(prev => {
+                              const next = { ...prev }
+                              delete next.dni
+                              return next
+                            })
+                          }
+                        }}
+                      />
+                      {fieldErrors.dni && (
+                        <div className="custom-validation-bubble" role="alert">
+                          <div className="bubble-arrow" />
+                          <span className="bubble-icon">!</span>
+                          <span className="bubble-text">{fieldErrors.dni}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="form-field">
@@ -885,7 +1107,6 @@ function App() {
                         setGroupCategory(newCat)
                         setPlayers(prev => prev.map(p => ({ ...p, category: p.category === groupCategory ? newCat : p.category })))
                       }}
-                      required
                     >
                       {CATEGORIES.map(cat => (
                         <option key={cat} value={cat}>
@@ -896,17 +1117,36 @@ function App() {
                   </div>
 
                   <div className="form-field full">
-                    <label>
+                    <label htmlFor="field-email">
                       Correo Electrónico *
                       <span className="highlight-tag">📧 Aquí te llegarán los QR de todas las entradas</span>
                     </label>
-                    <input
-                      type="email"
-                      required
-                      placeholder="tu-correo@gmail.com"
-                      value={buyer.email}
-                      onChange={e => updateBuyer('email', e.target.value)}
-                    />
+                    <div className="input-with-tooltip-wrap">
+                      <input
+                        id="field-email"
+                        type="email"
+                        placeholder="tu-correo@gmail.com"
+                        className={fieldErrors.email ? 'input-field-error' : ''}
+                        value={buyer.email}
+                        onChange={e => updateBuyer('email', e.target.value)}
+                        onFocus={() => {
+                          if (fieldErrors.email) {
+                            setFieldErrors(prev => {
+                              const next = { ...prev }
+                              delete next.email
+                              return next
+                            })
+                          }
+                        }}
+                      />
+                      {fieldErrors.email && (
+                        <div className="custom-validation-bubble" role="alert">
+                          <div className="bubble-arrow" />
+                          <span className="bubble-icon">!</span>
+                          <span className="bubble-text">{fieldErrors.email}</span>
+                        </div>
+                      )}
+                    </div>
                     <small className="field-hint">Asegurate de escribirlo correctamente. Te enviaremos todas las entradas emitidas a este correo.</small>
                   </div>
                 </div>
@@ -961,8 +1201,8 @@ function App() {
               )}
 
               <div className="form-actions">
-                <button type="button" className="btn-secondary" onClick={() => setCurrentStep('fiesta')}>
-                  <ArrowLeft size={16} /> Volver
+                <button type="button" className="btn-secondary" onClick={() => { setCurrentStep('entradas'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+                  <ArrowLeft size={16} /> Volver a Entradas
                 </button>
                 <button type="submit" className="btn-huge-red">
                   {total > 0 ? (
@@ -988,7 +1228,7 @@ function App() {
         {currentStep === 'pago' && (
           <section className="step-section animate-fade">
             <div className="step-header">
-              <button className="btn-back" onClick={() => setCurrentStep('entradas_datos')}>
+              <button className="btn-back" onClick={() => { setCurrentStep('datos'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
                 <ArrowLeft size={16} /> Modificar datos o cantidad
               </button>
               <div className="step-badge">
