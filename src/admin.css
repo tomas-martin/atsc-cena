@@ -894,17 +894,451 @@ input[type="number"] {
   transform: translateY(-1px);
 }
 
-/* Check-in manual */
-.manual-checkin-box {
-  margin-top: 24px;
-  padding-top: 20px;
-  border-top: 1px solid #182d49;
+/* ══════════════════════════════════════════════════════════
+   BÚSQUEDA DE ENTRADAS POR DNI (CONTROL EN PUERTA)
+   ══════════════════════════════════════════════════════════ */
+.dni-search-card {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid #1a3354;
 }
 
-.manual-checkin-box h4 {
+.dni-search-header {
+  margin-bottom: 14px;
+}
+
+.dni-search-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dni-search-icon-badge {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.dni-search-title-wrap h3 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 18px;
+  color: #ffffff;
+  margin: 0 0 2px 0;
+  letter-spacing: 0.3px;
+}
+
+.dni-search-title-wrap p {
   font-size: 12px;
-  color: #8496ad;
-  margin-bottom: 10px;
+  color: #8fa0b5;
+  margin: 0;
+  line-height: 1.35;
+}
+
+.dni-search-bar {
+  margin-bottom: 16px;
+}
+
+.dni-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.dni-input-icon {
+  position: absolute;
+  left: 14px;
+  color: #627d98;
+  pointer-events: none;
+}
+
+.dni-search-input {
+  width: 100%;
+  height: 48px;
+  background: #060d17;
+  border: 1.5px solid #1d375a;
+  border-radius: 8px;
+  padding: 0 42px 0 42px;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  transition: all 0.2s ease;
+}
+
+.dni-search-input:focus {
+  outline: none;
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+  background: #08111e;
+}
+
+.dni-search-input::placeholder {
+  color: #556c86;
+  font-weight: 400;
+  font-size: 14px;
+}
+
+.btn-clear-dni {
+  position: absolute;
+  right: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: #94a3b8;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-clear-dni:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.dni-search-hint {
+  background: rgba(56, 189, 248, 0.05);
+  border: 1px dashed rgba(56, 189, 248, 0.25);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.dni-search-hint p {
+  margin: 0;
+  font-size: 12px;
+  color: #93c5fd;
+  line-height: 1.45;
+}
+
+.dni-results-wrap {
+  margin-bottom: 18px;
+}
+
+.dni-groups-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.dni-order-group {
+  background: #070f1a;
+  border: 1px solid #1a3250;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.dni-order-header {
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid #182d49;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dni-order-buyer-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.dni-buyer-name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dni-buyer-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.dni-payment-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+}
+
+.dni-payment-badge.badge-paid {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.dni-payment-badge.badge-pending {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+}
+
+.dni-buyer-details {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #8fa0b5;
+  flex-wrap: wrap;
+}
+
+.dni-buyer-details b {
+  color: #cbd5e1;
+}
+
+.dni-count-badge {
+  background: rgba(56, 189, 248, 0.1);
+  color: #38bdf8;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.btn-checkin-all {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+  white-space: nowrap;
+}
+
+.btn-checkin-all:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.45);
+}
+
+.dni-tickets-list {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dni-ticket-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #0b1728;
+  border: 1px solid #162a45;
+  border-radius: 8px;
+  transition: all 0.15s ease;
+}
+
+.dni-ticket-card.ticket-is-used {
+  border-color: rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.03);
+}
+
+.dni-ticket-card.ticket-is-valid {
+  border-color: rgba(56, 189, 248, 0.25);
+}
+
+.dni-ticket-card:hover {
+  border-color: #2b4970;
+}
+
+.dni-ticket-left {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dni-ticket-attendee {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dni-ticket-attendee .attendee-name {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.ticket-type-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: 0.3px;
+}
+
+.ticket-type-pill.pill-companion {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.ticket-type-pill.pill-player {
+  background: rgba(148, 163, 184, 0.15);
+  color: #cbd5e1;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.dni-ticket-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #64748b;
+  font-family: monospace;
+}
+
+.dni-ticket-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.dni-status-valid-wrap,
+.dni-status-used-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-badge-pending {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.status-badge-used {
+  font-size: 11px;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  white-space: nowrap;
+}
+
+.btn-dni-checkin {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.3);
+  white-space: nowrap;
+}
+
+.btn-dni-checkin:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(16, 185, 129, 0.45);
+}
+
+.btn-dni-revert {
+  background: transparent;
+  color: #94a3b8;
+  border: 1px solid #1e3553;
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-dni-revert:hover {
+  color: #f87171;
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.dni-no-results {
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.no-res-icon {
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+
+.no-res-title {
+  margin: 0 0 3px 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fbbf24;
+}
+
+.no-res-sub {
+  margin: 0;
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+
+/* Fallback token manual */
+.manual-checkin-fallback {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #162b47;
+}
+
+.manual-checkin-fallback summary {
+  font-size: 11.5px;
+  color: #64748b;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+  transition: color 0.15s;
+}
+
+.manual-checkin-fallback summary:hover {
+  color: #94a3b8;
 }
 
 .manual-input-row {
@@ -914,24 +1348,29 @@ input[type="number"] {
 
 .manual-input-row input {
   flex: 1;
-  height: 42px;
+  height: 40px;
   background: #060d17;
   border: 1px solid #182d49;
   border-radius: 6px;
   padding: 0 12px;
   color: #fff;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 
 .manual-input-row button {
-  background: #d92736;
+  background: #2563eb;
   color: #fff;
   border: none;
-  padding: 0 18px;
+  padding: 0 16px;
   border-radius: 6px;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
+  transition: background 0.15s;
+}
+
+.manual-input-row button:hover {
+  background: #1d4ed8;
 }
 
 /* ══════════════════════════════════════════════════════════

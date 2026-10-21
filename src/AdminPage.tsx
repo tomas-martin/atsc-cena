@@ -7,7 +7,7 @@ import {
   Ticket, ArrowLeft, Search, Check, Send,
   Gift, Trophy, Sparkles, Dices, RotateCcw, Volume2, VolumeX,
   Copy, Trash2, Award, ChevronDown, ChevronUp,
-  Printer, FileText, Share2, Download, Filter
+  Printer, FileText, Share2, Download, Filter, X
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import { sendTicketsEmail } from './lib/email'
@@ -121,6 +121,12 @@ export default function AdminPage({
   const [approvingOrderId, setApprovingOrderId] = useState<string | null>(null)
   const [actionFeedback, setActionFeedback] = useState<{ message: string; success: boolean } | null>(null)
 
+  // Mapa de órdenes para búsqueda rápida y visualización de DNI del comprador (hook incondicional)
+  const orderMap = useMemo(() => new Map(orders.map(o => [o.id, o])), [orders])
+
+  // Búsqueda de entradas por DNI en el escáner
+  const [dniSearch, setDniSearch] = useState('')
+
   // ── Configuración del Talonario Físico para el Sorteo ──
   const [physicalConfig, setPhysicalConfig] = useState<{
     startNumber: number
@@ -229,6 +235,78 @@ export default function AdminPage({
     })
     return map
   }, [tickets])
+
+  // Búsqueda en tiempo real de entradas por DNI para el escáner
+  const dniSearchClean = dniSearch.replace(/[\.\s-]/g, '').trim().toLowerCase()
+
+  const dniSearchResults = useMemo(() => {
+    if (!dniSearchClean || dniSearchClean.length < 2) {
+      return []
+    }
+
+    // 1. Pedidos cuyo DNI del comprador o nombre coincida
+    const matchingOrders = orders.filter(o => {
+      const buyerDniClean = (o.buyer_dni || '').replace(/[\.\s-]/g, '').toLowerCase()
+      const buyerName = (o.buyer_full_name || '').toLowerCase()
+      return buyerDniClean.includes(dniSearchClean) || buyerName.includes(dniSearchClean)
+    })
+
+    const matchingOrderIds = new Set(matchingOrders.map(o => o.id))
+
+    // 2. Entradas cuyo asistente o token coincida directamente
+    const extraTickets = tickets.filter(t => {
+      if (matchingOrderIds.has(t.order_id)) return false
+      const attNameClean = (t.attendee_name || '').replace(/[\.\s-]/g, '').toLowerCase()
+      const tokenClean = (t.qr_token || '').toLowerCase()
+      return attNameClean.includes(dniSearchClean) || tokenClean.includes(dniSearchClean)
+    })
+
+    const groups: Array<{
+      order?: OrderRow
+      orderId: string
+      buyerName: string
+      buyerDni: string
+      buyerPhone?: string
+      orderStatus: string
+      tickets: TicketRow[]
+    }> = []
+
+    matchingOrders.forEach(order => {
+      const orderTickets = tickets.filter(t => t.order_id === order.id)
+      groups.push({
+        order,
+        orderId: order.id,
+        buyerName: order.buyer_full_name,
+        buyerDni: order.buyer_dni,
+        buyerPhone: order.buyer_phone,
+        orderStatus: order.status,
+        tickets: orderTickets
+      })
+    })
+
+    if (extraTickets.length > 0) {
+      const extraByOrder = new Map<string, TicketRow[]>()
+      extraTickets.forEach(t => {
+        const list = extraByOrder.get(t.order_id) || []
+        list.push(t)
+        extraByOrder.set(t.order_id, list)
+      })
+      extraByOrder.forEach((tList, ordId) => {
+        const ord = orderMap.get(ordId)
+        groups.push({
+          order: ord,
+          orderId: ordId,
+          buyerName: ord?.buyer_full_name || 'Sin nombre registrado',
+          buyerDni: ord?.buyer_dni || '---',
+          buyerPhone: ord?.buyer_phone,
+          orderStatus: ord?.status || 'desconocido',
+          tickets: tList
+        })
+      })
+    }
+
+    return groups
+  }, [dniSearchClean, orders, tickets, orderMap])
 
   function getTicketDisplayNumber(ticket: { id: string; attendee_name?: string; ticket_number?: number | null }, fallbackIndex?: number): string | null {
     if (isPlayerTicket(ticket)) {
@@ -703,7 +781,7 @@ export default function AdminPage({
       }
     } catch {}
 
-    // Fallback Supabase session
+    // Fallback Supabase session y listener reactivo
     if (supabase) {
       supabase.auth.getSession().then(({ data: { session } }) => {
         if (session?.user) {
@@ -712,6 +790,16 @@ export default function AdminPage({
           setUserEmail(session.user.email || null)
         }
       })
+      const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) {
+          setUserRole('superuser')
+          setSignedIn(true)
+          setUserEmail(session.user.email || null)
+        }
+      })
+      return () => {
+        authListener?.subscription?.unsubscribe()
+      }
     }
   }, [])
 
@@ -843,21 +931,32 @@ export default function AdminPage({
           email: usernameInput.trim(),
           password: passwordInput,
         })
-        if (!error && data.session?.user) {
+        const authUser = data?.session?.user || data?.user
+        if (!error && authUser) {
+          const email = authUser.email || usernameInput.trim()
           setUserRole('superuser')
-          setUserEmail(data.session.user.email || 'Admin Supabase')
+          setUserEmail(email)
           setSignedIn(true)
           setActiveTab('scanner')
           try {
             localStorage.setItem(
               'atsc_admin_session_v2',
-              JSON.stringify({ role: 'superuser', username: data.session.user.email, timestamp: Date.now() })
+              JSON.stringify({ role: 'superuser', username: email, timestamp: Date.now() })
             )
           } catch {}
           setLoading(false)
           return
         }
-      } catch {}
+        if (error) {
+          setLoading(false)
+          setAuthError(error.message || 'Error al autenticar en Supabase.')
+          return
+        }
+      } catch (err: any) {
+        setLoading(false)
+        setAuthError(err?.message || 'Error de conexión con el servidor de autenticación.')
+        return
+      }
     }
 
     setLoading(false)
@@ -1131,23 +1230,56 @@ export default function AdminPage({
   async function handleManualCheckIn(ticket: TicketRow) {
     const checkInTime = new Date().toISOString()
     if (supabase) {
-      await supabase
-        .from('tickets')
-        .update({ status: 'used', checked_in_at: checkInTime })
-        .eq('id', ticket.id)
+      try {
+        await supabase
+          .from('tickets')
+          .update({ status: 'used', checked_in_at: checkInTime })
+          .eq('id', ticket.id)
+      } catch (err) {
+        console.warn('Error al actualizar check-in en DB:', err)
+      }
     }
     setTickets(prev =>
       prev.map(t => (t.id === ticket.id ? { ...t, status: 'used', checked_in_at: checkInTime } : t))
     )
+    playBeep(true)
+  }
+
+  // Check-in masivo para todas las entradas pendientes de un pedido/DNI
+  async function handleCheckInAllForOrder(orderTickets: TicketRow[]) {
+    const validTickets = orderTickets.filter(t => t.status !== 'used')
+    if (validTickets.length === 0) return
+    const checkInTime = new Date().toISOString()
+    const validIds = validTickets.map(t => t.id)
+
+    if (supabase) {
+      try {
+        await supabase
+          .from('tickets')
+          .update({ status: 'used', checked_in_at: checkInTime })
+          .in('id', validIds)
+      } catch (err) {
+        console.warn('Error al actualizar check-in múltiple:', err)
+      }
+    }
+
+    setTickets(prev =>
+      prev.map(t => (validIds.includes(t.id) ? { ...t, status: 'used', checked_in_at: checkInTime } : t))
+    )
+    playBeep(true)
   }
 
   // Revertir check-in
   async function handleRevertCheckIn(ticket: TicketRow) {
     if (supabase) {
-      await supabase
-        .from('tickets')
-        .update({ status: 'valid', checked_in_at: null })
-        .eq('id', ticket.id)
+      try {
+        await supabase
+          .from('tickets')
+          .update({ status: 'valid', checked_in_at: null })
+          .eq('id', ticket.id)
+      } catch (err) {
+        console.warn('Error al revertir check-in en DB:', err)
+      }
     }
     setTickets(prev =>
       prev.map(t => (t.id === ticket.id ? { ...t, status: 'valid', checked_in_at: undefined } : t))
@@ -1470,9 +1602,6 @@ export default function AdminPage({
   const totalRevenue = orders.filter(o => o.status === 'pagado').reduce((sum, o) => sum + o.total_ars, 0)
   const pendingOrders = orders.filter(o => o.status === 'pendiente').length
 
-  // Mapa de órdenes para búsqueda rápida y visualización de DNI del comprador
-  const orderMap = useMemo(() => new Map(orders.map(o => [o.id, o])), [orders])
-
   // Filtrado de tickets (ordenados de forma correlativa para sorteo)
   const filteredTickets = [...tickets]
     .sort((a, b) => {
@@ -1783,26 +1912,190 @@ export default function AdminPage({
                 </div>
               )}
 
-              {/* Check-in manual por texto / DNI */}
-              <div className="manual-checkin-box">
-                <h4>Validación Manual (si la cámara no lee el QR):</h4>
-                <div className="manual-input-row">
-                  <input
-                    type="text"
-                    placeholder="Ingresá nombre, DNI o token del QR..."
-                    value={manualCode}
-                    onChange={e => setManualCode(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (manualCode.trim()) {
-                        void processQrCode(manualCode.trim())
-                      }
-                    }}
-                  >
-                    Verificar
-                  </button>
+              {/* ── Búsqueda de Entradas por DNI (Validación en Puerta) ── */}
+              <div className="dni-search-card">
+                <div className="dni-search-header">
+                  <div className="dni-search-title-wrap">
+                    <div className="dni-search-icon-badge">
+                      <Search size={18} />
+                    </div>
+                    <div>
+                      <h3>Búsqueda de Entradas por DNI</h3>
+                      <p>Consultá el DNI del comprador para ver todas sus entradas y registrar su ingreso</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="dni-search-bar">
+                  <div className="dni-input-wrapper">
+                    <Search size={16} className="dni-input-icon" />
+                    <input
+                      type="text"
+                      className="dni-search-input"
+                      placeholder="Ingresá número de DNI o apellido (ej: 38123456)..."
+                      value={dniSearch}
+                      onChange={e => setDniSearch(e.target.value)}
+                      autoComplete="off"
+                    />
+                    {dniSearch && (
+                      <button
+                        type="button"
+                        className="btn-clear-dni"
+                        onClick={() => setDniSearch('')}
+                        title="Limpiar búsqueda"
+                      >
+                        <X size={15} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Resultados de la búsqueda */}
+                {dniSearchClean.length >= 2 ? (
+                  <div className="dni-results-wrap animate-fade">
+                    {dniSearchResults.length > 0 ? (
+                      <div className="dni-groups-list">
+                        {dniSearchResults.map(group => {
+                          const usedCount = group.tickets.filter(t => t.status === 'used' || !!t.checked_in_at).length
+                          const pendingTickets = group.tickets.filter(t => t.status !== 'used' && !t.checked_in_at)
+                          const isPaid = group.orderStatus === 'pagado'
+
+                          return (
+                            <div key={group.orderId} className="dni-order-group">
+                              <div className="dni-order-header">
+                                <div className="dni-order-buyer-info">
+                                  <div className="dni-buyer-name-row">
+                                    <span className="dni-buyer-name">{group.buyerName}</span>
+                                    <span className={`dni-payment-badge ${isPaid ? 'badge-paid' : 'badge-pending'}`}>
+                                      {isPaid ? '✅ Pagado' : '⚠️ Pendiente'}
+                                    </span>
+                                  </div>
+                                  <div className="dni-buyer-details">
+                                    <span>🪪 <b>DNI:</b> {group.buyerDni}</span>
+                                    {group.buyerPhone && <span>📱 {group.buyerPhone}</span>}
+                                    <span className="dni-count-badge">
+                                      🎟️ {group.tickets.length} {group.tickets.length === 1 ? 'entrada' : 'entradas'} ({usedCount} ingresadas)
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {pendingTickets.length > 1 && (
+                                  <button
+                                    type="button"
+                                    className="btn-checkin-all"
+                                    onClick={() => void handleCheckInAllForOrder(group.tickets)}
+                                    title="Marcar ingreso para todas las entradas pendientes de este grupo"
+                                  >
+                                    <Check size={14} /> Ingresar todas ({pendingTickets.length})
+                                  </button>
+                                )}
+                              </div>
+
+                              <div className="dni-tickets-list">
+                                {group.tickets.map((t, idx) => {
+                                  const isCheckedIn = t.status === 'used' || !!t.checked_in_at
+                                  const isPlayer = isPlayerTicket(t)
+                                  const displayNum = isPlayer ? 'JUGADOR' : (getTicketDisplayNumber(t) || `#${idx + 1}`)
+                                  const checkInTime = t.checked_in_at
+                                    ? new Date(t.checked_in_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+                                    : ''
+
+                                  return (
+                                    <div
+                                      key={t.id}
+                                      className={`dni-ticket-card ${isCheckedIn ? 'ticket-is-used' : 'ticket-is-valid'}`}
+                                    >
+                                      <div className="dni-ticket-left">
+                                        <div className="dni-ticket-attendee">
+                                          <span className="attendee-name">{t.attendee_name || 'Asistente'}</span>
+                                          <span className={`ticket-type-pill ${isPlayer ? 'pill-player' : 'pill-companion'}`}>
+                                            🎟️ {displayNum}
+                                          </span>
+                                        </div>
+                                        <div className="dni-ticket-meta">
+                                          <span className="ticket-token">Token: {t.qr_token.slice(0, 8)}...</span>
+                                        </div>
+                                      </div>
+
+                                      <div className="dni-ticket-right">
+                                        {isCheckedIn ? (
+                                          <div className="dni-status-used-wrap">
+                                            <span className="status-badge-used">
+                                              🟢 INGRESÓ {checkInTime ? `(${checkInTime} hs)` : ''}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              className="btn-dni-revert"
+                                              onClick={() => void handleRevertCheckIn(t)}
+                                              title="Deshacer ingreso"
+                                            >
+                                              <RotateCcw size={12} /> Deshacer
+                                            </button>
+                                          </div>
+                                        ) : (
+                                          <div className="dni-status-valid-wrap">
+                                            <span className="status-badge-pending">⏳ SIN INGRESAR</span>
+                                            <button
+                                              type="button"
+                                              className="btn-dni-checkin"
+                                              onClick={() => void handleManualCheckIn(t)}
+                                            >
+                                              <Check size={14} /> Marcar Ingreso
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : (
+                      <div className="dni-no-results">
+                        <AlertTriangle size={22} className="no-res-icon" />
+                        <div>
+                          <p className="no-res-title">No se encontraron entradas con "{dniSearch}"</p>
+                          <p className="no-res-sub">
+                            Verificá que el número de DNI esté bien escrito o revisá en las pestañas <b>Padrón</b> o <b>Tickets</b>.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="dni-search-hint">
+                    <p>
+                      💡 <b>Tip de control en puerta:</b> Si un asistente no tiene el QR o no le funciona la pantalla del celular, ingresá su número de DNI acá arriba para validar su entrada y la de sus acompañantes.
+                    </p>
+                  </div>
+                )}
+
+                {/* Verificación por Token plano (código de barra / manual) */}
+                <div className="manual-checkin-fallback">
+                  <details>
+                    <summary>¿Querés ingresar manualmente un código alfanumérico o token QR?</summary>
+                    <div className="manual-input-row" style={{ marginTop: '10px' }}>
+                      <input
+                        type="text"
+                        placeholder="Pegar token de QR o UUID..."
+                        value={manualCode}
+                        onChange={e => setManualCode(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (manualCode.trim()) {
+                            void processQrCode(manualCode.trim())
+                          }
+                        }}
+                      >
+                        Validar Token
+                      </button>
+                    </div>
+                  </details>
                 </div>
               </div>
             </div>
