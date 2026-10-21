@@ -59,6 +59,9 @@ export interface RaffleParticipant {
   order?: OrderRow
   isCheckedIn: boolean
   isPhysical?: boolean
+  role?: 'jugador' | 'acompanante' | 'menor'
+  category?: string
+  displayName?: string
 }
 
 export interface WinnerRecord {
@@ -66,6 +69,7 @@ export interface WinnerRecord {
   timestamp: number
   prizeName: string
   participant: RaffleParticipant
+  categoryName?: string
 }
 
 export default function AdminPage({
@@ -521,6 +525,8 @@ export default function AdminPage({
   // ESTADO Y LÓGICA DEL SORTEO DE ENTRADAS AL AZAR
   // ═════════════════════════════════════════════════════════════════
   const [raffleFilter, setRaffleFilter] = useState<'checked_in_only' | 'all'>('checked_in_only')
+  const [raffleCategoryFilter, setRaffleCategoryFilter] = useState<string>('all')
+  const [raffleRoleFilter, setRaffleRoleFilter] = useState<'acompanante' | 'jugador' | 'all'>('acompanante')
   const [excludePreviousWinners, setExcludePreviousWinners] = useState(true)
   const [soundEnabled, setSoundEnabled] = useState(true)
   const [prizeInput, setPrizeInput] = useState('')
@@ -547,21 +553,32 @@ export default function AdminPage({
     } catch {}
   }, [winnersHistory])
 
-  // Participantes elegibles para sorteo (acompañantes online + entradas físicas del talonario)
+  // Participantes para sorteo (acompañantes y jugadores online + entradas físicas del talonario)
   const raffleParticipants = useMemo<RaffleParticipant[]>(() => {
-    // 1. Entradas online (acompañantes con número de sorteo)
-    const companionTickets = tickets.filter(t => !isPlayerTicket(t) && t.status !== 'cancelled')
-    const onlineList: RaffleParticipant[] = companionTickets.map(ticket => {
-      const ticketNumber = getTicketDisplayNumber(ticket) || '---'
+    // 1. Entradas online (acompañantes y jugadores con estado válido)
+    const validOnlineTickets = tickets.filter(t => t.status !== 'cancelled')
+    const onlineList: RaffleParticipant[] = []
+
+    validOnlineTickets.forEach(ticket => {
+      const parsed = parseTicketInfo(ticket)
+      // Excluir menores (<3 años) de los sorteos
+      if (parsed.role === 'menor') return
+
+      const isPlayer = parsed.role === 'jugador'
+      const ticketNumber = isPlayer ? 'JUGADOR' : (getTicketDisplayNumber(ticket) || '---')
       const order = orders.find(o => o.id === ticket.order_id)
       const isCheckedIn = ticket.status === 'used' || !!ticket.checked_in_at
-      return {
+
+      onlineList.push({
         ticket,
         ticketNumber,
         order,
         isCheckedIn,
-        isPhysical: false
-      }
+        isPhysical: false,
+        role: parsed.role,
+        category: parsed.category,
+        displayName: parsed.cleanName
+      })
     })
 
     // 2. Entradas físicas vendidas en mano (talonario ej: 1000..1024)
@@ -587,20 +604,82 @@ export default function AdminPage({
         ticketNumber: numStr,
         order: undefined,
         isCheckedIn: true,
-        isPhysical: true
+        isPhysical: true,
+        role: 'acompanante',
+        category: 'Talonario Físico',
+        displayName: `Talonario Físico N° ${numStr}`
       })
     }
 
     return [...onlineList, ...physicalList]
   }, [tickets, orders, ticketNumberMap, physicalConfig])
 
+  // Estadísticas rápidas de conteo para los selectores de categoría y rol
+  const raffleCategoryStats = useMemo(() => {
+    const stats: Record<string, { total: number; companions: number; players: number; present: number }> = {
+      all: { total: 0, companions: 0, players: 0, present: 0 }
+    }
+
+    for (const cat of CATEGORIES) {
+      stats[cat] = { total: 0, companions: 0, players: 0, present: 0 }
+    }
+    stats['fisica'] = { total: 0, companions: 0, players: 0, present: 0 }
+    stats['Sin Categoría'] = { total: 0, companions: 0, players: 0, present: 0 }
+
+    raffleParticipants.forEach(p => {
+      const key = p.isPhysical ? 'fisica' : (p.category || 'Sin Categoría')
+      if (!stats[key]) {
+        stats[key] = { total: 0, companions: 0, players: 0, present: 0 }
+      }
+
+      stats.all.total++
+      stats[key].total++
+
+      if (p.role === 'jugador') {
+        stats.all.players++
+        stats[key].players++
+      } else {
+        stats.all.companions++
+        stats[key].companions++
+      }
+
+      if (p.isCheckedIn) {
+        stats.all.present++
+        stats[key].present++
+      }
+    })
+
+    return stats
+  }, [raffleParticipants])
+
+  // Filtrado de participantes elegibles en base a Presencia, Ganadores previos, Categoría y Rol
   const eligibleParticipants = useMemo(() => {
     return raffleParticipants.filter(p => {
+      // 1. Presencia en puerta / salón
       if (raffleFilter === 'checked_in_only' && !p.isCheckedIn) return false
+
+      // 2. Ganadores previos
       if (excludePreviousWinners && winnersHistory.some(w => w.participant.ticket.id === p.ticket.id)) return false
+
+      // 3. Filtro por Rol (acompañantes con entrada paga vs jugadores del club vs todos)
+      if (raffleRoleFilter === 'acompanante' && p.role !== 'acompanante') return false
+      if (raffleRoleFilter === 'jugador' && p.role !== 'jugador') return false
+
+      // 4. Filtro por Categoría
+      if (raffleCategoryFilter !== 'all') {
+        if (raffleCategoryFilter === 'fisica') {
+          if (!p.isPhysical) return false
+        } else if (raffleCategoryFilter === 'Sin Categoría') {
+          if (p.isPhysical || p.category !== 'Sin Categoría') return false
+        } else {
+          // Categoría deportiva específica (ej: Escuelita, C11, C13, Primera, etc.)
+          if (p.isPhysical || p.category !== raffleCategoryFilter) return false
+        }
+      }
+
       return true
     })
-  }, [raffleParticipants, raffleFilter, excludePreviousWinners, winnersHistory])
+  }, [raffleParticipants, raffleFilter, excludePreviousWinners, winnersHistory, raffleRoleFilter, raffleCategoryFilter])
 
   // Audio Web API para efectos de sonido
   function playTickSound() {
@@ -730,8 +809,8 @@ export default function AdminPage({
     function step() {
       const randIndex = Math.floor(Math.random() * eligibleParticipants.length)
       const p = eligibleParticipants[randIndex]
-      setRollingNumber(p.ticketNumber)
-      setRollingAttendee(p.ticket.attendee_name)
+      setRollingNumber(p.role === 'jugador' ? '⚽ JUGADOR' : p.ticketNumber)
+      setRollingAttendee(p.displayName || p.ticket.attendee_name)
       playTickSound()
 
       currentStep++
@@ -743,8 +822,8 @@ export default function AdminPage({
         }
         setTimeout(step, intervalTime)
       } else {
-        setRollingNumber(winnerCandidate.ticketNumber)
-        setRollingAttendee(winnerCandidate.ticket.attendee_name)
+        setRollingNumber(winnerCandidate.role === 'jugador' ? '⚽ JUGADOR' : winnerCandidate.ticketNumber)
+        setRollingAttendee(winnerCandidate.displayName || winnerCandidate.ticket.attendee_name)
         setCurrentWinner(winnerCandidate)
         setIsRolling(false)
         playFanfareSound()
@@ -755,7 +834,8 @@ export default function AdminPage({
           id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()),
           timestamp: Date.now(),
           prizeName: defaultPrize,
-          participant: winnerCandidate
+          participant: winnerCandidate,
+          categoryName: winnerCandidate.isPhysical ? 'Talonario Físico' : (winnerCandidate.category || 'Sin Categoría')
         }
 
         setWinnersHistory(prev => [newRecord, ...prev])
@@ -2577,12 +2657,153 @@ export default function AdminPage({
             <div className="sorteo-badge-pill">
               <Sparkles size={14} /> Sorteo Oficial · Andes Talleres Sport Club
             </div>
-            <h2>Sorteo de Entradas de la Cena</h2>
+            <h2>Sorteo de Entradas y Premios de la Cena</h2>
             <p>
-              Elegí un número al azar de manera transparente y en vivo entre las entradas de acompañantes emitidas.
+              Elegí un número o participante al azar en vivo y con total transparencia. Podés sortear por categoría deportiva o general, y filtrar por acompañantes o jugadores.
             </p>
 
-            {/* Barra de Ajustes y Filtro de Participantes */}
+            {/* ── Panel de Filtros por Categoría y Rol ── */}
+            <div className="sorteo-filters-panel">
+              <div className="sorteo-filters-grid">
+                {/* 1. Selector de Categoría Deportiva */}
+                <div className="sorteo-filter-group">
+                  <label className="sorteo-group-label">
+                    <Trophy size={14} color="#fbbf24" /> Categoría en Sorteo:
+                  </label>
+                  <div className="sorteo-category-select-wrap">
+                    <select
+                      className="sorteo-category-select"
+                      value={raffleCategoryFilter}
+                      onChange={e => setRaffleCategoryFilter(e.target.value)}
+                      disabled={isRolling}
+                    >
+                      <option value="all">
+                        🌐 Todas las Categorías ({raffleCategoryStats.all.total} participantes)
+                      </option>
+                      <optgroup label="Divisiones Deportivas">
+                        {CATEGORIES.map(cat => {
+                          const count = raffleCategoryStats[cat]?.total || 0
+                          const comp = raffleCategoryStats[cat]?.companions || 0
+                          const play = raffleCategoryStats[cat]?.players || 0
+                          return (
+                            <option key={cat} value={cat}>
+                              {cat} {count > 0 ? `(${count} en total: ${comp} acomp · ${play} jug)` : '(0 registrados)'}
+                            </option>
+                          )
+                        })}
+                      </optgroup>
+                      {physicalConfig.soldCount > 0 && (
+                        <optgroup label="Venta en Mano">
+                          <option value="fisica">
+                            🎟️ Talonario Físico ({physicalConfig.soldCount} boletos)
+                          </option>
+                        </optgroup>
+                      )}
+                      {(raffleCategoryStats['Sin Categoría']?.total || 0) > 0 && (
+                        <option value="Sin Categoría">
+                          Sin Categoría Asignada ({raffleCategoryStats['Sin Categoría']?.total})
+                        </option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 2. Selector de Rol / Tipo de Participante */}
+                <div className="sorteo-filter-group">
+                  <label className="sorteo-group-label">
+                    <Users size={14} color="#00d2b4" /> Participan en el Bombo:
+                  </label>
+                  <div className="sorteo-role-pills">
+                    <button
+                      type="button"
+                      className={`sorteo-role-pill ${raffleRoleFilter === 'acompanante' ? 'active' : ''}`}
+                      onClick={() => setRaffleRoleFilter('acompanante')}
+                      disabled={isRolling}
+                      title="Solo entradas pagas / acompañantes con número de sorteo"
+                    >
+                      <Ticket size={13} />
+                      Acompañantes
+                      <span className="pill-counter">
+                        {raffleCategoryFilter === 'all'
+                          ? raffleCategoryStats.all.companions
+                          : (raffleCategoryStats[raffleCategoryFilter]?.companions || 0)}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`sorteo-role-pill ${raffleRoleFilter === 'jugador' ? 'active' : ''}`}
+                      onClick={() => setRaffleRoleFilter('jugador')}
+                      disabled={isRolling}
+                      title="Solo jugadores del club de la categoría"
+                    >
+                      ⚽
+                      Jugadores
+                      <span className="pill-counter">
+                        {raffleCategoryFilter === 'all'
+                          ? raffleCategoryStats.all.players
+                          : (raffleCategoryStats[raffleCategoryFilter]?.players || 0)}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      className={`sorteo-role-pill ${raffleRoleFilter === 'all' ? 'active' : ''}`}
+                      onClick={() => setRaffleRoleFilter('all')}
+                      disabled={isRolling}
+                      title="Tanto jugadores como acompañantes"
+                    >
+                      👥
+                      Todos
+                      <span className="pill-counter">
+                        {raffleCategoryFilter === 'all'
+                          ? raffleCategoryStats.all.total
+                          : (raffleCategoryStats[raffleCategoryFilter]?.total || 0)}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones de Acceso Rápido a Categorías */}
+              <div className="sorteo-quick-cats">
+                <button
+                  type="button"
+                  className={`sorteo-quick-cat-btn ${raffleCategoryFilter === 'all' ? 'active' : ''}`}
+                  onClick={() => setRaffleCategoryFilter('all')}
+                  disabled={isRolling}
+                >
+                  🌐 Todas
+                </button>
+                {CATEGORIES.map(cat => {
+                  const count = raffleCategoryStats[cat]?.total || 0
+                  if (count === 0 && raffleCategoryFilter !== cat) return null
+                  return (
+                    <button
+                      key={cat}
+                      type="button"
+                      className={`sorteo-quick-cat-btn ${raffleCategoryFilter === cat ? 'active' : ''}`}
+                      onClick={() => setRaffleCategoryFilter(cat)}
+                      disabled={isRolling}
+                    >
+                      {cat} <span style={{ opacity: 0.7, fontSize: '10px' }}>({count})</span>
+                    </button>
+                  )
+                })}
+                {physicalConfig.soldCount > 0 && (
+                  <button
+                    type="button"
+                    className={`sorteo-quick-cat-btn ${raffleCategoryFilter === 'fisica' ? 'active' : ''}`}
+                    onClick={() => setRaffleCategoryFilter('fisica')}
+                    disabled={isRolling}
+                  >
+                    🎟️ Físicas ({physicalConfig.soldCount})
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Barra de Ajustes Secundarios: Presencia en Puerta, Ganadores Previos y Sonido */}
             <div className="sorteo-settings-bar">
               <div className="sorteo-filter-toggle">
                 <button
@@ -2590,16 +2811,18 @@ export default function AdminPage({
                   className={`sorteo-filter-btn ${raffleFilter === 'checked_in_only' ? 'active' : ''}`}
                   onClick={() => setRaffleFilter('checked_in_only')}
                   disabled={isRolling}
+                  title="Solo quienes ya registraron ingreso en puerta"
                 >
-                  <CheckCircle2 size={14} /> Solo Presentes ({raffleParticipants.filter(p => p.isCheckedIn).length})
+                  <CheckCircle2 size={14} /> Solo Presentes ({raffleParticipants.filter(p => p.isCheckedIn && (raffleCategoryFilter === 'all' ? true : (raffleCategoryFilter === 'fisica' ? p.isPhysical : p.category === raffleCategoryFilter)) && (raffleRoleFilter === 'all' ? true : p.role === raffleRoleFilter)).length})
                 </button>
                 <button
                   type="button"
                   className={`sorteo-filter-btn ${raffleFilter === 'all' ? 'active' : ''}`}
                   onClick={() => setRaffleFilter('all')}
                   disabled={isRolling}
+                  title="Todas las entradas vendidas e inscriptos, ingresados o no"
                 >
-                  <Ticket size={14} /> Todas las Entradas ({raffleParticipants.length})
+                  <Ticket size={14} /> Todos ({raffleParticipants.filter(p => (raffleCategoryFilter === 'all' ? true : (raffleCategoryFilter === 'fisica' ? p.isPhysical : p.category === raffleCategoryFilter)) && (raffleRoleFilter === 'all' ? true : p.role === raffleRoleFilter)).length})
                 </button>
               </div>
 
@@ -2624,46 +2847,65 @@ export default function AdminPage({
               </button>
             </div>
 
-            {/* Resumen rápido de origen de entradas en sorteo */}
+            {/* Resumen rápido de origen y estado en sorteo */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(6, 13, 23, 0.75)', border: '1px solid #142742', borderRadius: '8px', padding: '10px 16px', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '13px', flexWrap: 'wrap' }}>
                 <span style={{ color: '#8a9ab5' }}>
-                  🌐 Web Online: <strong style={{ color: '#00d2b4' }}>{tickets.filter(t => !isPlayerTicket(t) && t.status !== 'cancelled').length}</strong>
+                  🏷️ Categoría: <strong style={{ color: '#fbbf24' }}>{raffleCategoryFilter === 'all' ? 'Todas' : (raffleCategoryFilter === 'fisica' ? 'Talonario Físico' : raffleCategoryFilter)}</strong>
                 </span>
                 <span style={{ color: '#8a9ab5' }}>
-                  🎟️ Talonario Físico: <strong style={{ color: '#fbbf24' }}>{physicalConfig.soldCount}</strong> {physicalConfig.soldCount > 0 && <small style={{ color: '#627d98' }}>(#{physicalConfig.startNumber}-#{physicalConfig.startNumber + physicalConfig.soldCount - 1})</small>}
+                  👥 Participantes: <strong style={{ color: '#00d2b4' }}>{raffleRoleFilter === 'acompanante' ? 'Acompañantes' : raffleRoleFilter === 'jugador' ? 'Jugadores' : 'Todos'}</strong>
                 </span>
                 <span style={{ color: '#ffffff' }}>
-                  🎰 Total Habilitadas: <strong style={{ color: '#ff6b77', fontSize: '15px' }}>{eligibleParticipants.length}</strong>
+                  🎰 En el Bombo: <strong style={{ color: '#ff6b77', fontSize: '15px' }}>{eligibleParticipants.length}</strong>
                 </span>
               </div>
-              <button
-                type="button"
-                className="btn-dash-outline"
-                style={{ padding: '4px 10px', fontSize: '11px', color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.4)' }}
-                onClick={() => setActiveTab('presencial')}
-              >
-                ⚙️ Ajustar Talonario Físico
-              </button>
+              {raffleCategoryFilter === 'all' && (
+                <button
+                  type="button"
+                  className="btn-dash-outline"
+                  style={{ padding: '4px 10px', fontSize: '11px', color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.4)' }}
+                  onClick={() => setActiveTab('presencial')}
+                >
+                  ⚙️ Ajustar Talonario Físico
+                </button>
+              )}
             </div>
 
             {/* Escenario Digital / Pantalla del Sorteo */}
             <div className={`sorteo-stage-box ${isRolling ? 'is-spinning' : ''}`}>
               <div className="sorteo-stage-tag">
-                {isRolling ? '⚡ SORTEANDO NÚMERO AL AZAR...' : (currentWinner ? '🏆 ¡ENTRADA GANADORA!' : 'NÚMERO DE ENTRADA')}
+                {isRolling
+                  ? `⚡ SORTEANDO ${raffleCategoryFilter !== 'all' ? (raffleCategoryFilter === 'fisica' ? 'TALONARIO FÍSICO' : raffleCategoryFilter.toUpperCase()) : 'AL AZAR'}...`
+                  : (currentWinner
+                    ? `🏆 ¡GANADOR${currentWinner.role === 'jugador' ? ' JUGADOR' : ''}! · ${currentWinner.isPhysical ? 'TALONARIO FÍSICO' : (currentWinner.category || 'GENERAL')}`
+                    : (raffleCategoryFilter !== 'all' ? `SORTEO: ${raffleCategoryFilter.toUpperCase()}` : 'NÚMERO DE ENTRADA')
+                  )}
               </div>
 
-              <div className={`sorteo-digital-number ${currentWinner && !isRolling ? 'winner-glory' : ''}`}>
-                {isRolling ? `#${rollingNumber}` : (currentWinner ? `#${currentWinner.ticketNumber}` : (rollingNumber !== '???' ? `#${rollingNumber}` : '#???'))}
+              <div className={`sorteo-digital-number ${currentWinner && !isRolling ? 'winner-glory' : ''} ${(rollingNumber.startsWith('⚽') || currentWinner?.role === 'jugador') ? 'digital-number-player' : ''}`}>
+                {isRolling
+                  ? (rollingNumber.startsWith('⚽') ? rollingNumber : `#${rollingNumber}`)
+                  : (currentWinner
+                    ? (currentWinner.role === 'jugador' ? '⚽ JUGADOR' : `#${currentWinner.ticketNumber}`)
+                    : (rollingNumber !== '???' ? (rollingNumber.startsWith('⚽') ? rollingNumber : `#${rollingNumber}`) : '#???')
+                  )}
               </div>
 
               <div className="sorteo-preview-name">
                 {isRolling ? (
                   <span>{rollingAttendee}</span>
                 ) : currentWinner ? (
-                  <strong style={{ color: '#ffffff', fontSize: '18px' }}>{currentWinner.ticket.attendee_name}</strong>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <strong style={{ color: '#ffffff', fontSize: '18px' }}>
+                      {currentWinner.displayName || currentWinner.ticket.attendee_name}
+                    </strong>
+                    <span className="badge-winner-cat">
+                      {currentWinner.isPhysical ? '🎟️ Talonario Físico' : `${currentWinner.role === 'jugador' ? '⚽ Jugador' : '🎟️ Entrada'} · ${currentWinner.category || 'General'}`}
+                    </span>
+                  </div>
                 ) : (
-                  <span>Presioná el botón para sortear una entrada al azar</span>
+                  <span>Presioná el botón para sortear entre {eligibleParticipants.length} participantes habilitados</span>
                 )}
               </div>
             </div>
@@ -2673,7 +2915,7 @@ export default function AdminPage({
               <label><Award size={14} /> Premio en juego:</label>
               <input
                 type="text"
-                placeholder={`Ej: Camiseta Oficial, Vino Reserva, Premio #${winnersHistory.length + 1}...`}
+                placeholder={`Ej: Camiseta Oficial, Pelota, Vino Reserva, Premio #${winnersHistory.length + 1}...`}
                 value={prizeInput}
                 onChange={e => setPrizeInput(e.target.value)}
                 disabled={isRolling}
@@ -2694,7 +2936,7 @@ export default function AdminPage({
                   </>
                 ) : (
                   <>
-                    <Dices size={22} /> ¡Sortear Número Ganador!
+                    <Dices size={22} /> ¡Sortear Ganador!
                   </>
                 )}
               </button>
@@ -2715,12 +2957,13 @@ export default function AdminPage({
             <div className="sorteo-pool-count">
               {eligibleParticipants.length > 0 ? (
                 <>
-                  Participan <strong>{eligibleParticipants.length}</strong> entradas en este sorteo
-                  {raffleFilter === 'checked_in_only' ? ' (solo quienes ya ingresaron al evento)' : ' (todas las vendidas)'}.
+                  Participan <strong>{eligibleParticipants.length}</strong> {raffleRoleFilter === 'jugador' ? 'jugadores' : raffleRoleFilter === 'acompanante' ? 'entradas de acompañantes' : 'personas'} en este sorteo
+                  {raffleCategoryFilter !== 'all' ? ` de la categoría ${raffleCategoryFilter}` : ''}
+                  {raffleFilter === 'checked_in_only' ? ' (solo quienes ya ingresaron al evento)' : ' (todos los inscriptos)'}.
                 </>
               ) : (
                 <span style={{ color: '#ff6874' }}>
-                  ⚠️ No hay entradas participantes disponibles con los filtros seleccionados.
+                  ⚠️ No hay participantes disponibles con los filtros de categoría y rol seleccionados.
                 </span>
               )}
             </div>
@@ -2731,10 +2974,10 @@ export default function AdminPage({
             <div className="winner-card-container">
               <div className="winner-card-header">
                 <div className="winner-trophy-badge">
-                  <Trophy size={22} /> ¡NÚMERO GANADOR REVELADO!
+                  <Trophy size={22} /> ¡GANADOR REVELADO!
                 </div>
                 <span className="winner-number-pill">
-                  N° {currentWinner.ticketNumber}
+                  {currentWinner.role === 'jugador' ? '⚽ JUGADOR' : `N° ${currentWinner.ticketNumber}`}
                 </span>
               </div>
 
@@ -2768,12 +3011,48 @@ export default function AdminPage({
                       </div>
                     </div>
                   </>
+                ) : currentWinner.role === 'jugador' ? (
+                  <>
+                    <div className="winner-detail-col">
+                      <label>Jugador del Club</label>
+                      <strong style={{ color: '#ffffff', fontSize: '17px' }}>{currentWinner.displayName || currentWinner.ticket.attendee_name}</strong>
+                      <span style={{ color: '#00d2b4', fontWeight: 700 }}>⚽ Jugador Oficial · {currentWinner.category || 'Club'}</span>
+                    </div>
+
+                    <div className="winner-detail-col">
+                      <label>Presencia en el Salón</label>
+                      {currentWinner.isCheckedIn ? (
+                        <div className="winner-attendance-status winner-att-present">
+                          <CheckCircle2 size={14} /> PRESENTE EN EL SALÓN
+                          {currentWinner.ticket.checked_in_at && (
+                            <span> · Ingreso {new Date(currentWinner.ticket.checked_in_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="winner-attendance-status winner-att-absent">
+                          <AlertTriangle size={14} /> NO REGISTRÓ INGRESO AÚN
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="winner-detail-col">
+                      <label>Responsable Familiar / Comprador</label>
+                      <strong>{currentWinner.order?.buyer_full_name || 'Venta directa'}</strong>
+                      <span>DNI: {currentWinner.order?.buyer_dni || '—'} · Pedido #{currentWinner.ticket.order_id?.slice(0, 6).toUpperCase()}</span>
+                    </div>
+
+                    <div className="winner-detail-col">
+                      <label>Teléfono de Contacto</label>
+                      <strong>{currentWinner.order?.buyer_phone || 'Sin teléfono'}</strong>
+                      <span>{currentWinner.order?.buyer_email || '—'}</span>
+                    </div>
+                  </>
                 ) : (
                   <>
                     <div className="winner-detail-col">
                       <label>Asistente Ganador</label>
-                      <strong>{currentWinner.ticket.attendee_name}</strong>
-                      <span>Entrada N° {currentWinner.ticketNumber} (Acompañante)</span>
+                      <strong style={{ color: '#ffffff', fontSize: '17px' }}>{currentWinner.displayName || currentWinner.ticket.attendee_name}</strong>
+                      <span style={{ color: '#fbbf24', fontWeight: 600 }}>🎟️ Entrada N° {currentWinner.ticketNumber} (Acompañante · {currentWinner.category || 'General'})</span>
                     </div>
 
                     <div className="winner-detail-col">
@@ -2810,7 +3089,11 @@ export default function AdminPage({
               <div className="winner-actions-bar">
                 {!currentWinner.isPhysical && currentWinner.order?.buyer_phone && (
                   <a
-                    href={`https://wa.me/${currentWinner.order.buyer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(`¡Hola ${currentWinner.order.buyer_full_name}! Te avisamos que tu entrada N° ${currentWinner.ticketNumber} (${currentWinner.ticket.attendee_name}) acaba de salir ganadora en el sorteo de la Cena Andes Talleres 2026! 🏆🎉`)}`}
+                    href={`https://wa.me/${currentWinner.order.buyer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(
+                      currentWinner.role === 'jugador'
+                        ? `¡Hola ${currentWinner.order.buyer_full_name}! Te avisamos que ${currentWinner.displayName || currentWinner.ticket.attendee_name} (Jugador de ${currentWinner.category || 'Andes Talleres'}) acaba de salir ganador en el sorteo de la Cena Andes Talleres 2026! 🏆⚽🎉`
+                        : `¡Hola ${currentWinner.order.buyer_full_name}! Te avisamos que tu entrada N° ${currentWinner.ticketNumber} (${currentWinner.displayName || currentWinner.ticket.attendee_name} · ${currentWinner.category || 'Andes Talleres'}) acaba de salir ganadora en el sorteo de la Cena Andes Talleres 2026! 🏆🎉`
+                    )}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="btn-winner-wa"
@@ -2825,7 +3108,9 @@ export default function AdminPage({
                   onClick={() => {
                     const text = currentWinner.isPhysical
                       ? `🏆 GANADOR DEL SORTEO ATSC\nN°: ${currentWinner.ticketNumber}\nTipo: Entrada Física / Talonario en mano\nEstado: Presentar talón físico N° ${currentWinner.ticketNumber} para retirar premio`
-                      : `🏆 GANADOR DEL SORTEO ATSC\nN°: ${currentWinner.ticketNumber}\nAsistente: ${currentWinner.ticket.attendee_name}\nComprador: ${currentWinner.order?.buyer_full_name || '—'} (DNI: ${currentWinner.order?.buyer_dni || '—'})\nTeléfono: ${currentWinner.order?.buyer_phone || '—'}\nEstado: ${currentWinner.isCheckedIn ? 'Presente en el salón' : 'Sin ingreso registrado'}`
+                      : currentWinner.role === 'jugador'
+                      ? `🏆 GANADOR DEL SORTEO ATSC (JUGADOR)\nCategoría: ${currentWinner.category || '—'}\nJugador: ${currentWinner.displayName || currentWinner.ticket.attendee_name}\nTitular / Familia: ${currentWinner.order?.buyer_full_name || '—'} (DNI: ${currentWinner.order?.buyer_dni || '—'})\nTeléfono: ${currentWinner.order?.buyer_phone || '—'}\nEstado: ${currentWinner.isCheckedIn ? 'Presente en el salón' : 'Sin ingreso registrado'}`
+                      : `🏆 GANADOR DEL SORTEO ATSC\nN°: ${currentWinner.ticketNumber}\nCategoría: ${currentWinner.category || '—'}\nAsistente: ${currentWinner.displayName || currentWinner.ticket.attendee_name}\nComprador: ${currentWinner.order?.buyer_full_name || '—'} (DNI: ${currentWinner.order?.buyer_dni || '—'})\nTeléfono: ${currentWinner.order?.buyer_phone || '—'}\nEstado: ${currentWinner.isCheckedIn ? 'Presente en el salón' : 'Sin ingreso registrado'}`
                     navigator.clipboard.writeText(text)
                     setCopiedRecordId('current')
                     setTimeout(() => setCopiedRecordId(null), 2500)
@@ -2869,7 +3154,9 @@ export default function AdminPage({
                       const listText = winnersHistory.map((w, idx) =>
                         w.participant.isPhysical
                           ? `${idx + 1}. [N° ${w.participant.ticketNumber}] ${w.prizeName}: Boleto Físico (Talonario en mano)`
-                          : `${idx + 1}. [N° ${w.participant.ticketNumber}] ${w.prizeName}: ${w.participant.ticket.attendee_name} (Comprador: ${w.participant.order?.buyer_full_name || '—'} - Tel: ${w.participant.order?.buyer_phone || '—'})`
+                          : w.participant.role === 'jugador'
+                          ? `${idx + 1}. [⚽ Jugador · ${w.participant.category || '—'}] ${w.prizeName}: ${w.participant.displayName || w.participant.ticket.attendee_name} (Familia: ${w.participant.order?.buyer_full_name || '—'} - Tel: ${w.participant.order?.buyer_phone || '—'})`
+                          : `${idx + 1}. [N° ${w.participant.ticketNumber} · ${w.participant.category || '—'}] ${w.prizeName}: ${w.participant.displayName || w.participant.ticket.attendee_name} (Comprador: ${w.participant.order?.buyer_full_name || '—'} - Tel: ${w.participant.order?.buyer_phone || '—'})`
                       ).join('\n')
                       navigator.clipboard.writeText(`🏆 GANADORES SORTEO CENA ANDES TALLERES:\n\n${listText}`)
                       setCopiedRecordId('all')
@@ -2897,7 +3184,7 @@ export default function AdminPage({
 
             {winnersHistory.length === 0 ? (
               <div className="sorteo-history-empty">
-                Aún no se sortearon premios en esta sesión. Presioná el botón de sortear para comenzar.
+                Aún no se sortearon premios en esta sesión. Seleccioná una categoría o rol y presioná el botón de sortear.
               </div>
             ) : (
               <div className="table-scroll-wrap">
@@ -2906,7 +3193,8 @@ export default function AdminPage({
                     <tr>
                       <th>#</th>
                       <th>Premio</th>
-                      <th>N° Entrada</th>
+                      <th>N° / Tipo</th>
+                      <th>Categoría</th>
                       <th>Asistente Ganador</th>
                       <th>Comprador & Contacto</th>
                       <th>Asistencia</th>
@@ -2922,12 +3210,21 @@ export default function AdminPage({
                           <strong>{rec.prizeName}</strong>
                         </td>
                         <td>
-                          <span className="order-num-pill" style={{ color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.1)' }}>
-                            🎟️ N° {rec.participant.ticketNumber}
+                          {rec.participant.role === 'jugador' ? (
+                            <span className="badge-role-player">⚽ Jugador</span>
+                          ) : (
+                            <span className="order-num-pill" style={{ color: '#fbbf24', borderColor: 'rgba(251,191,36,0.3)', background: 'rgba(251,191,36,0.1)' }}>
+                              🎟️ N° {rec.participant.ticketNumber}
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="badge-cat-history">
+                            {rec.participant.isPhysical ? 'Talonario Físico' : (rec.participant.category || rec.categoryName || 'Sin Categoría')}
                           </span>
                         </td>
                         <td>
-                          <strong>{rec.participant.ticket.attendee_name}</strong>
+                          <strong>{rec.participant.displayName || rec.participant.ticket.attendee_name}</strong>
                           {rec.participant.isPhysical && (
                             <div style={{ color: '#fbbf24', fontSize: '11px', fontWeight: 600 }}>Talonario Físico</div>
                           )}
@@ -3000,7 +3297,7 @@ export default function AdminPage({
                     <Search size={14} />
                     <input
                       type="text"
-                      placeholder="Buscar por número o nombre de asistente..."
+                      placeholder="Buscar por número, nombre o categoría..."
                       value={transparencySearch}
                       onChange={e => setTransparencySearch(e.target.value)}
                     />
@@ -3010,11 +3307,21 @@ export default function AdminPage({
                 <div className="transparency-grid">
                   {raffleParticipants
                     .filter(p => {
-                      if (!transparencySearch.trim()) return true
+                      // Filtrar según categoría y rol seleccionados si no se está buscando globalmente
+                      if (!transparencySearch.trim()) {
+                        if (raffleRoleFilter === 'acompanante' && p.role !== 'acompanante') return false
+                        if (raffleRoleFilter === 'jugador' && p.role !== 'jugador') return false
+                        if (raffleCategoryFilter !== 'all') {
+                          if (raffleCategoryFilter === 'fisica' && !p.isPhysical) return false
+                          if (raffleCategoryFilter !== 'fisica' && (p.isPhysical || p.category !== raffleCategoryFilter)) return false
+                        }
+                        return true
+                      }
                       const q = transparencySearch.toLowerCase()
                       return (
                         p.ticketNumber.includes(q) ||
-                        p.ticket.attendee_name?.toLowerCase().includes(q) ||
+                        (p.displayName || p.ticket.attendee_name)?.toLowerCase().includes(q) ||
+                        (p.category || '').toLowerCase().includes(q) ||
                         p.order?.buyer_full_name?.toLowerCase().includes(q)
                       )
                     })
@@ -3026,12 +3333,17 @@ export default function AdminPage({
                         <div
                           key={p.ticket.id}
                           className={`transparency-item ${hasWon ? 'item-won' : ''}`}
-                          title={`${p.ticket.attendee_name} - ${p.isCheckedIn ? 'Ingresó' : 'Sin ingreso'}`}
+                          title={`${p.displayName || p.ticket.attendee_name} (${p.category || 'Sin Cat'}) - ${p.isCheckedIn ? 'Ingresó' : 'Sin ingreso'}`}
                         >
                           <div>
-                            <span className="transparency-num">N° {p.ticketNumber}</span>
+                            <span className="transparency-num">
+                              {p.role === 'jugador' ? '⚽ JUGADOR' : `N° ${p.ticketNumber}`}
+                            </span>
                             <div style={{ color: p.isPhysical ? '#fbbf24' : '#cfd8e3', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }}>
-                              {p.isPhysical ? '🎟️ Talonario Físico' : p.ticket.attendee_name}
+                              {p.isPhysical ? '🎟️ Talonario Físico' : (p.displayName || p.ticket.attendee_name)}
+                            </div>
+                            <div style={{ color: '#8fa6c5', fontSize: '10px' }}>
+                              {p.category || 'General'}
                             </div>
                           </div>
                           <div>
