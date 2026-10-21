@@ -861,7 +861,7 @@ export default function AdminPage({
     }
 
     setLoading(false)
-    setAuthError('Usuario o contraseña no válidos. Podés usar "admin" / "atsc2026" o "puerta" / "puerta2026".')
+    setAuthError('Usuario o contraseña incorrectos. Verificá los datos ingresados.')
   }
 
   async function handleSignOut() {
@@ -1420,7 +1420,7 @@ export default function AdminPage({
                 onChange={e => setUsernameInput(e.target.value)}
                 required
                 autoFocus
-                placeholder="admin o puerta"
+                placeholder="Ingresá tu usuario"
                 autoCapitalize="none"
                 autoCorrect="off"
               />
@@ -1451,67 +1451,6 @@ export default function AdminPage({
               )}
             </button>
           </form>
-
-          {/* Accesos rápidos por perfil */}
-          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #1c3252' }}>
-            <p style={{ fontSize: '11px', fontWeight: 700, color: '#8a9ab5', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px', textAlign: 'center' }}>
-              Acceso Rápido por Perfil:
-            </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setUsernameInput('admin')
-                  setPasswordInput('atsc2026')
-                }}
-                style={{
-                  background: 'rgba(251, 191, 36, 0.08)',
-                  border: '1px solid rgba(251, 191, 36, 0.25)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#fbbf24',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <span>👑 <strong>Super Usuario</strong> (Acceso Total)</span>
-                <span style={{ fontSize: '11px', opacity: 0.8, color: '#fff' }}>admin / atsc2026</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setUsernameInput('puerta')
-                  setPasswordInput('puerta2026')
-                }}
-                style={{
-                  background: 'rgba(56, 189, 248, 0.08)',
-                  border: '1px solid rgba(56, 189, 248, 0.25)',
-                  borderRadius: '8px',
-                  padding: '10px 14px',
-                  color: '#38bdf8',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <span>🚪 <strong>Control en Puerta</strong> (Solo Escáner)</span>
-                <span style={{ fontSize: '11px', opacity: 0.8, color: '#fff' }}>puerta / puerta2026</span>
-              </button>
-            </div>
-            <p style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', marginTop: '10px', marginBottom: 0 }}>
-              💡 Tocá un perfil para rellenar usuario y contraseña al instante.
-            </p>
-          </div>
 
           {onBack && (
             <button type="button" className="admin-back-btn" onClick={onBack}>
@@ -1604,7 +1543,7 @@ export default function AdminPage({
             </span>
           ) : (
             <span style={{ fontSize: '12px', color: '#38bdf8', padding: '6px 12px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
-              🚪 Control en Puerta {userEmail ? `(${userEmail})` : '(Solo Escáner)'}
+              🚪 Control en Puerta {userEmail ? `(${userEmail})` : ''}
             </span>
           )}
           {userRole === 'superuser' && (
@@ -1665,6 +1604,12 @@ export default function AdminPage({
         >
           <Camera size={18} /> Escáner de Cámara QR
         </button>
+        <button
+          className={activeTab === 'tickets' ? 'active' : ''}
+          onClick={() => setActiveTab('tickets')}
+        >
+          <Ticket size={18} /> Listado de Entradas ({tickets.length})
+        </button>
         {userRole === 'superuser' && (
           <>
             <button
@@ -1684,12 +1629,6 @@ export default function AdminPage({
               onClick={() => setActiveTab('padron')}
             >
               <FileText size={18} /> 📋 Padrón y Conteo
-            </button>
-            <button
-              className={activeTab === 'tickets' ? 'active' : ''}
-              onClick={() => setActiveTab('tickets')}
-            >
-              <Ticket size={18} /> Listado de Entradas ({tickets.length})
             </button>
             <button
               className={activeTab === 'orders' ? 'active' : ''}
@@ -2047,7 +1986,7 @@ export default function AdminPage({
       {/* ══════════════════════════════════════════════════════════════
           TAB 2: LISTADO DE ENTRADAS & CHECK-IN MANUAL
          ══════════════════════════════════════════════════════════════ */}
-      {userRole === 'superuser' && activeTab === 'tickets' && (
+      {activeTab === 'tickets' && (
         <section className="table-section animate-fade">
           <div className="table-controls-bar">
             <div className="search-box">
@@ -2078,15 +2017,17 @@ export default function AdminPage({
               >
                 ⚪ Sin Ingresar ({Math.max(0, totalTicketsIssued - totalCheckedIn)})
               </button>
-              <button
-                type="button"
-                className="btn-dash-outline"
-                style={{ borderColor: 'rgba(251, 191, 36, 0.4)', color: '#fbbf24', marginLeft: 'auto' }}
-                onClick={() => setActiveTab('sorteo')}
-                title="Abrir la ruleta / sorteador de números de entradas"
-              >
-                <Gift size={15} /> Ir al Sorteo
-              </button>
+              {userRole === 'superuser' && (
+                <button
+                  type="button"
+                  className="btn-dash-outline"
+                  style={{ borderColor: 'rgba(251, 191, 36, 0.4)', color: '#fbbf24', marginLeft: 'auto' }}
+                  onClick={() => setActiveTab('sorteo')}
+                  title="Abrir la ruleta / sorteador de números de entradas"
+                >
+                  <Gift size={15} /> Ir al Sorteo
+                </button>
+              )}
             </div>
           </div>
 
