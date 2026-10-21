@@ -2083,6 +2083,106 @@ button {
   color: var(--red-talleres);
 }
 
+/* Tarjetas de carga de Jugadores */
+.player-input-card {
+  background: rgba(6, 13, 23, 0.85);
+  border: 1px solid rgba(0, 210, 180, 0.3);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.2s;
+}
+
+.player-input-card:hover {
+  border-color: rgba(0, 210, 180, 0.6);
+  box-shadow: 0 4px 14px rgba(0, 210, 180, 0.08);
+}
+
+.player-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.player-index-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #00d2b4;
+  background: rgba(0, 210, 180, 0.12);
+  padding: 4px 10px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.btn-self-fill {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  color: #c2cad7;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-self-fill:hover {
+  background: rgba(0, 210, 180, 0.15);
+  color: #00d2b4;
+  border-color: rgba(0, 210, 180, 0.4);
+}
+
+.player-inputs-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 600px) {
+  .player-inputs-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.player-inputs-row .form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.player-inputs-row label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #cfd8e3;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.player-inputs-row input {
+  height: 44px;
+  background: rgba(14, 26, 43, 0.85);
+  border: 1px solid var(--navy-card-border);
+  border-radius: 6px;
+  padding: 0 14px;
+  color: #ffffff;
+  font-size: 13px;
+  outline: none;
+  transition: all 0.2s;
+}
+
+.player-inputs-row input:focus {
+  border-color: #00d2b4;
+  box-shadow: 0 0 0 3px rgba(0, 210, 180, 0.2);
+}
+
 .category-select-input {
   height: 44px;
   background: rgba(6, 13, 23, 0.85);
