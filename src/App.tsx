@@ -73,7 +73,7 @@ function App() {
   // ── Selección clara y estructurada de entradas del grupo ──
   interface PlayerAttendeeItem {
     name: string
-    category: Category
+    category: Category | ''
   }
 
   // Jugadores del club ($0 - entrada bonificada, sin número de sorteo)
@@ -82,8 +82,8 @@ function App() {
   // Acompañantes / Familiares que abonan entrada ($unitPrice) y participan del sorteo
   const [companionCount, setCompanionCount] = useState<number>(0)
 
-  // Categoría por defecto si no hay jugadores en el grupo
-  const [groupCategory, setGroupCategory] = useState<Category>('Escuelita')
+  // Categoría por defecto si no hay jugadores en el grupo (inicia sin seleccionar)
+  const [groupCategory, setGroupCategory] = useState<Category | ''>('')
 
   // Menores de 3 años (GRATIS, $0, no participan del sorteo)
   const [childrenCount, setChildrenCount] = useState<number>(0)
@@ -124,8 +124,8 @@ function App() {
   }, [companionCount, unitPrice])
 
   // Categoría principal asociada al grupo
-  const primaryCategory = useMemo<Category>(() => {
-    return players[0]?.category || groupCategory
+  const primaryCategory = useMemo<string>(() => {
+    return players[0]?.category || groupCategory || '(Ninguno)'
   }, [players, groupCategory])
 
   // Cargar precio y logo desde Supabase si existen
@@ -181,7 +181,7 @@ function App() {
       return
     }
 
-    // Validar que cada jugador cargado tenga su nombre y apellido
+    // Validar que cada jugador cargado tenga su nombre, apellido y categoría seleccionada
     for (let i = 0; i < players.length; i++) {
       if (!players[i].name.trim()) {
         errors[`player_${i}`] =
@@ -189,11 +189,25 @@ function App() {
             ? 'Completá el nombre y apellido del jugador'
             : `Completá el nombre del Jugador #${i + 1}`
       }
+      if (!players[i].category) {
+        errors[`player_cat_${i}`] =
+          players.length === 1
+            ? 'Seleccioná la categoría del jugador'
+            : `Seleccioná la categoría del Jugador #${i + 1}`
+      }
     }
 
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors)
-      setErrorMessage('Por favor completá los nombres de los jugadores ingresados.')
+      const hasNameError = Object.keys(errors).some(k => k.startsWith('player_') && !k.startsWith('player_cat_'))
+      const hasCatError = Object.keys(errors).some(k => k.startsWith('player_cat_'))
+      if (hasNameError && hasCatError) {
+        setErrorMessage('Por favor completá los nombres y seleccioná las categorías de los jugadores.')
+      } else if (hasCatError) {
+        setErrorMessage('Por favor seleccioná la categoría de cada jugador ingresado.')
+      } else {
+        setErrorMessage('Por favor completá los nombres de los jugadores ingresados.')
+      }
       const firstKey = Object.keys(errors)[0]
       setTimeout(() => {
         const el = document.getElementById(`field-${firstKey}`)
@@ -203,6 +217,10 @@ function App() {
         }
       }, 50)
       return
+    }
+
+    if (players.length > 0 && players[0]?.category && !groupCategory) {
+      setGroupCategory(players[0].category)
     }
 
     setFieldErrors({})
@@ -230,6 +248,10 @@ function App() {
       errors.email = 'Completá este campo con tu correo electrónico'
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyer.email)) {
       errors.email = 'Ingresá un correo electrónico válido'
+    }
+
+    if (!groupCategory) {
+      errors.groupCategory = 'Seleccioná la categoría deportiva'
     }
 
     if (Object.keys(errors).length > 0) {
@@ -353,7 +375,7 @@ function App() {
           venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
           isPlayer: true,
           role: 'jugador',
-          category: p.category,
+          category: (p.category || 'Escuelita') as Category,
         })
       }
 
@@ -387,7 +409,7 @@ function App() {
           venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
           isPlayer: false,
           role: 'acompanante',
-          category: primaryCategory,
+          category: (primaryCategory || 'Escuelita') as Category,
         })
       }
 
@@ -410,7 +432,7 @@ function App() {
           venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
           isPlayer: true,
           role: 'menor',
-          category: primaryCategory,
+          category: (primaryCategory || 'Escuelita') as Category,
         })
       }
 
@@ -449,7 +471,7 @@ function App() {
         attendeeDetails: tickets.map(t => ({
           name: t.attendeeName,
           role: t.role || (t.isPlayer ? 'jugador' : 'acompanante'),
-          category: t.category || primaryCategory
+          category: (t.category || primaryCategory || 'Escuelita') as Category
         }))
       }
 
@@ -694,7 +716,7 @@ function App() {
                           if (players.length < 10) {
                             setPlayers(prev => [
                               ...prev,
-                              { name: '', category: prev[prev.length - 1]?.category || groupCategory || 'Escuelita' }
+                              { name: '', category: '' }
                             ])
                           }
                         }}
@@ -757,21 +779,48 @@ function App() {
                               </div>
                             </div>
                             <div className="form-field">
-                              <label>Categoría / División *</label>
-                              <select
-                                className="category-select-input"
-                                value={p.category}
-                                onChange={e => {
-                                  const val = e.target.value as Category
-                                  setPlayers(prev => prev.map((item, i) => i === idx ? { ...item, category: val } : item))
-                                }}
-                              >
-                                {CATEGORIES.map(cat => (
-                                  <option key={cat} value={cat}>
-                                    Categoría {cat}
-                                  </option>
-                                ))}
-                              </select>
+                              <label htmlFor={`field-player_cat_${idx}`}>Categoría / División *</label>
+                              <div className="input-with-tooltip-wrap">
+                                <select
+                                  id={`field-player_cat_${idx}`}
+                                  className={`category-select-input ${fieldErrors[`player_cat_${idx}`] ? 'input-field-error' : ''}`}
+                                  value={p.category}
+                                  onChange={e => {
+                                    const val = e.target.value as Category | ''
+                                    setPlayers(prev => prev.map((item, i) => i === idx ? { ...item, category: val } : item))
+                                    if (fieldErrors[`player_cat_${idx}`]) {
+                                      setFieldErrors(prev => {
+                                        const next = { ...prev }
+                                        delete next[`player_cat_${idx}`]
+                                        return next
+                                      })
+                                    }
+                                  }}
+                                  onFocus={() => {
+                                    if (fieldErrors[`player_cat_${idx}`]) {
+                                      setFieldErrors(prev => {
+                                        const next = { ...prev }
+                                        delete next[`player_cat_${idx}`]
+                                        return next
+                                      })
+                                    }
+                                  }}
+                                >
+                                  <option value="">(Ninguno)</option>
+                                  {CATEGORIES.map(cat => (
+                                    <option key={cat} value={cat}>
+                                      Categoría {cat}
+                                    </option>
+                                  ))}
+                                </select>
+                                {fieldErrors[`player_cat_${idx}`] && (
+                                  <div className="custom-validation-bubble" role="alert">
+                                    <div className="bubble-arrow" />
+                                    <span className="bubble-icon">!</span>
+                                    <span className="bubble-text">{fieldErrors[`player_cat_${idx}`]}</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1097,23 +1146,49 @@ function App() {
                   </div>
 
                   <div className="form-field">
-                    <label>Categoría deportiva *</label>
-                    <select
-                      className="category-select-input"
-                      style={{ width: '100%', height: '44px' }}
-                      value={groupCategory}
-                      onChange={e => {
-                        const newCat = e.target.value as Category
-                        setGroupCategory(newCat)
-                        setPlayers(prev => prev.map(p => ({ ...p, category: p.category === groupCategory ? newCat : p.category })))
-                      }}
-                    >
-                      {CATEGORIES.map(cat => (
-                        <option key={cat} value={cat}>
-                          Categoría {cat}
-                        </option>
-                      ))}
-                    </select>
+                    <label htmlFor="field-groupCategory">Categoría deportiva *</label>
+                    <div className="input-with-tooltip-wrap">
+                      <select
+                        id="field-groupCategory"
+                        className={`category-select-input ${fieldErrors.groupCategory ? 'input-field-error' : ''}`}
+                        style={{ width: '100%', height: '44px' }}
+                        value={groupCategory}
+                        onChange={e => {
+                          const newCat = e.target.value as Category | ''
+                          setGroupCategory(newCat)
+                          if (fieldErrors.groupCategory) {
+                            setFieldErrors(prev => {
+                              const next = { ...prev }
+                              delete next.groupCategory
+                              return next
+                            })
+                          }
+                        }}
+                        onFocus={() => {
+                          if (fieldErrors.groupCategory) {
+                            setFieldErrors(prev => {
+                              const next = { ...prev }
+                              delete next.groupCategory
+                              return next
+                            })
+                          }
+                        }}
+                      >
+                        <option value="">(Ninguno)</option>
+                        {CATEGORIES.map(cat => (
+                          <option key={cat} value={cat}>
+                            Categoría {cat}
+                          </option>
+                        ))}
+                      </select>
+                      {fieldErrors.groupCategory && (
+                        <div className="custom-validation-bubble" role="alert">
+                          <div className="bubble-arrow" />
+                          <span className="bubble-icon">!</span>
+                          <span className="bubble-text">{fieldErrors.groupCategory}</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="form-field full">
