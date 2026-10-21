@@ -3,9 +3,10 @@ export type Step = 'fiesta' | 'entradas_datos' | 'pago' | 'confirmacion'
 export type PaymentMethod = 'mercadopago' | 'naranja_x' | 'transferencia'
 export type OrderStatus = 'pendiente' | 'pagado' | 'rechazado' | 'cancelado'
 
-export type AttendeeRole = 'jugador' | 'acompanante'
+export type AttendeeRole = 'jugador' | 'acompanante' | 'menor'
 
 export const CATEGORIES = [
+  'Escuelita',
   'C5',
   'C7',
   'C9',

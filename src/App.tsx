@@ -16,15 +16,12 @@ import {
   type Step,
   type IssuedTicket,
   type OrderConfirmation,
-  type AttendeeRole,
   type Category,
-  type AttendeeDetail,
   CATEGORIES
 } from './types'
 
 // Precio base de referencia por entrada en ARS (si Supabase no define otro)
 const DEFAULT_PRICE_ARS = 25000
-const MAX_PER_ORDER = 10
 
 // Datos bancarios y de contacto oficiales
 const CLUB_ALIAS = (import.meta.env.VITE_CLUB_ALIAS as string) || 'ANDES.TALLERES.FUTSAL'
@@ -73,21 +70,27 @@ function App() {
   )
   const [unitPrice, setUnitPrice] = useState<number>(DEFAULT_PRICE_ARS)
 
-  // ── Selección de entradas y comprador ──
-  const [quantity, setQuantity] = useState(1)
+  // ── Selección simplificada de entradas y grupo ──
+  const [buyerRole, setBuyerRole] = useState<'jugador' | 'acompanante'>('jugador')
+  const [selectedCategory, setSelectedCategory] = useState<Category>('Escuelita')
+  // Acompañantes que abonan entrada ($unitPrice)
+  const [companionCount, setCompanionCount] = useState<number>(0)
+  // Menores de 3 años (GRATIS, $0, no participan del sorteo)
+  const [childrenCount, setChildrenCount] = useState<number>(0)
+
+  // Personalización opcional de nombres para acompañantes y menores
+  const [showCustomNames, setShowCustomNames] = useState(false)
+  const [customCompanionNames, setCustomCompanionNames] = useState<string[]>([])
+  const [customChildNames, setCustomChildNames] = useState<string[]>([])
+
+  // Datos de contacto del comprador / responsable del grupo
   const [buyer, setBuyer] = useState<BuyerDetails>({
     fullName: '',
     dni: '',
     email: '',
     phone: '',
     attendees: [''],
-    attendeeDetails: [
-      {
-        name: '',
-        role: 'jugador',
-        category: 'Primera'
-      }
-    ]
+    attendeeDetails: []
   })
 
   // Pago: Exclusivo Transferencia por Alias
@@ -99,19 +102,25 @@ function App() {
   const [orderConfirmation, setOrderConfirmation] = useState<OrderConfirmation | null>(null)
   const [confirmationQrUrls, setConfirmationQrUrls] = useState<Record<string, string>>({})
 
-  // Conteo de acompañantes y jugadores
-  const companionCount = useMemo(() => {
-    return (buyer.attendeeDetails || []).filter(a => a.role === 'acompanante').length
-  }, [buyer.attendeeDetails])
+  // Conteo efectivo de acompañantes que pagan
+  const effectiveCompanionCount = useMemo(() => {
+    return buyerRole === 'jugador' ? companionCount : Math.max(1, companionCount)
+  }, [buyerRole, companionCount])
 
+  // Conteo de jugadores
   const playerCount = useMemo(() => {
-    return (buyer.attendeeDetails || []).filter(a => a.role === 'jugador').length
-  }, [buyer.attendeeDetails])
+    return buyerRole === 'jugador' ? 1 : 0
+  }, [buyerRole])
 
-  // Solo pagan los acompañantes; jugadores tienen costo $0
+  // Total de entradas emitidas (jugador + acompañantes + menores < 3)
+  const quantity = useMemo(() => {
+    return playerCount + effectiveCompanionCount + childrenCount
+  }, [playerCount, effectiveCompanionCount, childrenCount])
+
+  // Solo pagan los acompañantes; jugadores y menores de 3 años tienen costo $0
   const total = useMemo(() => {
-    return companionCount * unitPrice
-  }, [companionCount, unitPrice])
+    return effectiveCompanionCount * unitPrice
+  }, [effectiveCompanionCount, unitPrice])
 
   // Cargar precio y logo desde Supabase si existen
   useEffect(() => {
@@ -137,48 +146,8 @@ function App() {
     loadConfig()
   }, [])
 
-  // Sincronizar array de asistentes con la cantidad seleccionada
-  useEffect(() => {
-    setBuyer(prev => {
-      const curDetails = prev.attendeeDetails || []
-      const newDetails: AttendeeDetail[] = Array.from({ length: quantity }, (_, idx) => {
-        if (curDetails[idx]) return curDetails[idx]
-        return {
-          name: idx === 0 ? prev.fullName : '',
-          role: idx === 0 ? 'jugador' : 'acompanante',
-          category: curDetails[0]?.category || 'Primera'
-        }
-      })
-      const attendeesList = newDetails.map(d =>
-        d.name ? `${d.name} (${d.role === 'jugador' ? 'Jugador' : 'Acompañante'} · ${d.category})` : ''
-      )
-      return { ...prev, attendeeDetails: newDetails, attendees: attendeesList }
-    })
-  }, [quantity])
-
   const updateBuyer = (field: keyof BuyerDetails, value: string) => {
-    setBuyer(current => {
-      const updated = { ...current, [field]: value }
-      if (field === 'fullName') {
-        const details = [...(current.attendeeDetails || [])]
-        if (details[0] && (!details[0].name || details[0].name === current.fullName)) {
-          details[0] = { ...details[0], name: value }
-          updated.attendeeDetails = details
-        }
-      }
-      return updated
-    })
-  }
-
-  const updateAttendeeDetail = (index: number, updates: Partial<AttendeeDetail>) => {
-    setBuyer(prev => {
-      const list = [...(prev.attendeeDetails || [])]
-      list[index] = { ...list[index], ...updates }
-      const attendeesList = list.map(d =>
-        d.name ? `${d.name} (${d.role === 'jugador' ? 'Jugador' : 'Acompañante'} · ${d.category})` : ''
-      )
-      return { ...prev, attendeeDetails: list, attendees: attendeesList }
-    })
+    setBuyer(current => ({ ...current, [field]: value }))
   }
 
   // Copiar alias al portapapeles
@@ -198,26 +167,16 @@ function App() {
       return
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyer.email)) {
-      setErrorMessage('Ingresá un correo electrónico válido para recibir las entradas.')
+      setErrorMessage('Ingresá un correo electrónico válido para recibir las entradas con código QR.')
       return
     }
     if (buyer.dni.length < 7) {
       setErrorMessage('Ingresá un número de DNI válido.')
       return
     }
-
-    // Validar datos de cada entrada
-    for (let i = 0; i < quantity; i++) {
-      const det = buyer.attendeeDetails?.[i]
-      const effName = det?.name?.trim() || (i === 0 ? buyer.fullName.trim() : '')
-      if (!effName) {
-        setErrorMessage(`Por favor completá el nombre del asistente en la Entrada #${i + 1}.`)
-        return
-      }
-      if (!det?.category) {
-        setErrorMessage(`Por favor seleccioná la categoría para la Entrada #${i + 1}.`)
-        return
-      }
+    if (quantity < 1) {
+      setErrorMessage('Debés seleccionar al menos una entrada para continuar.')
+      return
     }
 
     setCurrentStep('pago')
@@ -291,25 +250,14 @@ function App() {
       }
 
       // 3. Generar tickets:
-      // - Jugadores: NO tienen número de sorteo (ticketNumber: 'JUGADOR', DB ticket_number: null o 0)
+      // - Jugadores: NO tienen número de sorteo (ticketNumber: 'JUGADOR', DB ticket_number: 0)
+      // - Menores < 3 años: Bonificados (ticketNumber: 'MENOR', DB ticket_number: 0)
       // - Acompañantes: SÍ tienen número correlativo de sorteo (ej: 001, 002...)
       let companionRaffleCount = 0
-      const tickets: IssuedTicket[] = Array.from({ length: quantity }, (_, i) => {
-        const detail = buyer.attendeeDetails?.[i] || {
-          name: i === 0 ? buyer.fullName : `Asistente ${i + 1}`,
-          role: (i === 0 ? 'jugador' : 'acompanante') as AttendeeRole,
-          category: 'Primera' as Category,
-        }
+      const tickets: IssuedTicket[] = []
 
-        const isPlayer = detail.role === 'jugador'
-        let formattedNum = 'JUGADOR'
-        if (!isPlayer) {
-          const currentNum = nextTicketNumber + companionRaffleCount
-          formattedNum = String(currentNum).padStart(3, '0')
-          companionRaffleCount++
-        }
-
-        const uuidToken = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      const makeUuid = () =>
+        (typeof crypto !== 'undefined' && crypto.randomUUID)
           ? crypto.randomUUID()
           : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
             const r = (Math.random() * 16) | 0
@@ -317,25 +265,73 @@ function App() {
             return v.toString(16)
           })
 
-        const rawName = (detail.name && detail.name.trim())
-          ? detail.name.trim()
-          : (i === 0 ? buyer.fullName : `Asistente ${i + 1}`)
-
-        const formattedAttendeeName = `${rawName} (${isPlayer ? 'Jugador' : 'Acompañante'} · ${detail.category})`
-
-        return {
-          ticketNumber: formattedNum,
-          attendeeName: formattedAttendeeName,
-          qrToken: uuidToken,
+      // A) Entrada del jugador (si el titular es jugador)
+      if (buyerRole === 'jugador') {
+        tickets.push({
+          ticketNumber: 'JUGADOR',
+          attendeeName: `${buyer.fullName.trim()} (Jugador · ${selectedCategory})`,
+          qrToken: makeUuid(),
           orderId: displayOrderId,
           eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
           date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
           venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
-          isPlayer,
-          role: detail.role,
-          category: detail.category,
+          isPlayer: true,
+          role: 'jugador',
+          category: selectedCategory,
+        })
+      }
+
+      // B) Entradas de acompañantes que pagan (cada uno con número de sorteo)
+      for (let i = 0; i < effectiveCompanionCount; i++) {
+        const currentNum = nextTicketNumber + companionRaffleCount
+        const formattedNum = String(currentNum).padStart(3, '0')
+        companionRaffleCount++
+
+        let attendeeRaw = ''
+        if (customCompanionNames[i]?.trim()) {
+          attendeeRaw = customCompanionNames[i].trim()
+        } else if (buyerRole === 'acompanante' && i === 0) {
+          attendeeRaw = buyer.fullName.trim()
+        } else {
+          attendeeRaw = `${buyer.fullName.trim()} - Acompañante ${i + 1}`
         }
-      })
+
+        tickets.push({
+          ticketNumber: formattedNum,
+          attendeeName: `${attendeeRaw} (Acompañante · ${selectedCategory})`,
+          qrToken: makeUuid(),
+          orderId: displayOrderId,
+          eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
+          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
+          venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
+          isPlayer: false,
+          role: 'acompanante',
+          category: selectedCategory,
+        })
+      }
+
+      // C) Entradas de menores de 3 años (Gratis, $0, sin número de sorteo)
+      for (let i = 0; i < childrenCount; i++) {
+        let attendeeRaw = ''
+        if (customChildNames[i]?.trim()) {
+          attendeeRaw = customChildNames[i].trim()
+        } else {
+          attendeeRaw = `${buyer.fullName.trim()} - Menor <3 años ${childrenCount > 1 ? i + 1 : ''}`.trim()
+        }
+
+        tickets.push({
+          ticketNumber: 'MENOR',
+          attendeeName: `${attendeeRaw} (Menor <3 años · ${selectedCategory})`,
+          qrToken: makeUuid(),
+          orderId: displayOrderId,
+          eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
+          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
+          venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
+          isPlayer: true,
+          role: 'menor',
+          category: selectedCategory,
+        })
+      }
 
       // 4. Guardar tickets en Supabase
       if (supabase && savedOrderId) {
@@ -344,11 +340,11 @@ function App() {
           attendee_name: t.attendeeName,
           qr_token: t.qrToken,
           status: 'valid',
-          ticket_number: t.isPlayer ? null : parseInt(t.ticketNumber, 10),
+          ticket_number: (t.isPlayer || t.role === 'menor' || t.role === 'jugador') ? null : parseInt(t.ticketNumber, 10),
         }))
         const { error: ticketErr } = await supabase.from('tickets').insert(ticketRows)
         if (ticketErr) {
-          // Si ticket_number viola restricción NOT NULL (código 23502), reintentar asignando 0 a jugadores
+          // Si ticket_number viola restricción NOT NULL (código 23502), reintentar asignando 0 a jugadores/menores
           if (ticketErr.code === '23502') {
             const retryRows = ticketRows.map(r => ({
               ...r,
@@ -365,7 +361,18 @@ function App() {
         }
       }
 
-      // 5. Si la orden es 100% de jugadores ($0), generar QR y despachar correo inmediatamente
+      // Estructura completa del comprador con los nombres de asistentes para emails y comprobantes
+      const buyerWithDetails: BuyerDetails = {
+        ...buyer,
+        attendees: tickets.map(t => t.attendeeName),
+        attendeeDetails: tickets.map(t => ({
+          name: t.attendeeName,
+          role: t.role || (t.isPlayer ? 'jugador' : 'acompanante'),
+          category: t.category || selectedCategory
+        }))
+      }
+
+      // 5. Si la orden es 100% bonificada ($0), generar QR y despachar correo inmediatamente
       let generatedQrs: Record<string, string> = {}
       let emailDispatched = false
       if (isZeroCostOrder) {
@@ -389,8 +396,8 @@ function App() {
 
           const instantConf: OrderConfirmation = {
             orderId: displayOrderId,
-            buyer,
-            quantity,
+            buyer: buyerWithDetails,
+            quantity: tickets.length,
             totalArs: 0,
             paymentMethod: 'transferencia',
             tickets,
@@ -406,8 +413,8 @@ function App() {
 
       const conf: OrderConfirmation = {
         orderId: displayOrderId,
-        buyer,
-        quantity,
+        buyer: buyerWithDetails,
+        quantity: tickets.length,
         totalArs: total,
         paymentMethod: 'transferencia',
         tickets,
@@ -546,182 +553,18 @@ function App() {
                 <ArrowLeft size={16} /> Volver
               </button>
               <div className="step-badge">PASO 2 DE 3</div>
-              <h1>Seleccioná tus entradas y completá tus datos</h1>
-              <p>Indicá si cada persona es Jugador o Acompañante y su categoría. Las entradas de jugadores son gratuitas y no participan del sorteo.</p>
+              <h1>Completá tus datos y armá tu grupo</h1>
+              <p>Solo una persona del grupo llena este formulario para recibir las entradas de todos por correo electrónico.</p>
             </div>
 
             <form onSubmit={handleProceedToPayment} className="form-container">
-              {/* Selector de Cantidad */}
-              <div className="dark-card">
-                <div className="card-top-header">
-                  <div className="card-icon-round"><Ticket size={20} /></div>
-                  <div>
-                    <h3>Cantidad de Entradas</h3>
-                    <p>Entrada Cena de Fin de Año 2026</p>
-                  </div>
-                  <div className="card-right-badge">Máx. {MAX_PER_ORDER} entradas</div>
-                </div>
-
-                <div className="ticket-counter-box">
-                  <div className="counter-info">
-                    <strong>Tarifa acompañantes:</strong>
-                    <span className="price-big">{money(unitPrice)}</span>
-                    <small style={{ color: '#00d2b4', display: 'block', marginTop: '4px', fontWeight: 'bold' }}>
-                      ⚽ Jugadores: ¡GRATIS! ($0)
-                    </small>
-                  </div>
-
-                  <div className="stepper-modern">
-                    <button
-                      type="button"
-                      aria-label="Restar entrada"
-                      onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                      disabled={quantity <= 1}
-                    >
-                      <Minus size={18} />
-                    </button>
-                    <span className="stepper-val">{quantity}</span>
-                    <button
-                      type="button"
-                      aria-label="Sumar entrada"
-                      onClick={() => setQuantity(q => Math.min(MAX_PER_ORDER, q + 1))}
-                      disabled={quantity >= MAX_PER_ORDER}
-                    >
-                      <Plus size={18} />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Lista de selección de cada asistente: Rol y Categoría */}
-                <div className="attendee-details-container">
-                  <div className="attendee-details-title-row">
-                    <h4><Users size={18} /> Tipo de Asistente y Categoría por Entrada</h4>
-                    <span className="attendee-count-pill">{quantity} persona{quantity > 1 ? 's' : ''}</span>
-                  </div>
-
-                  <div className="attendee-cards-list">
-                    {Array.from({ length: quantity }).map((_, idx) => {
-                      const detail = buyer.attendeeDetails?.[idx] || {
-                        name: '',
-                        role: 'jugador' as AttendeeRole,
-                        category: 'Primera' as Category,
-                      }
-
-                      return (
-                        <div key={idx} className="attendee-card-item">
-                          <div className="attendee-card-header">
-                            <span className="attendee-tag-badge">Entrada #{idx + 1}</span>
-                            <span className={`attendee-type-indicator ${detail.role === 'jugador' ? 'indicator-jugador' : 'indicator-acompanante'}`}>
-                              {detail.role === 'jugador' ? '⚽ Jugador · $0 (Sin sorteo)' : `🎟️ Acompañante · ${money(unitPrice)} (Con sorteo)`}
-                            </span>
-                          </div>
-
-                          <div className="attendee-card-body">
-                            {/* 1. Selección primero: Jugador o Acompañante */}
-                            <div className="attendee-step-field">
-                              <label className="attendee-field-label">
-                                <b>1. ¿Quién asiste con esta entrada? *</b>
-                              </label>
-                              <div className="role-selector-grid">
-                                <button
-                                  type="button"
-                                  className={`role-option-btn ${detail.role === 'jugador' ? 'selected role-jugador' : ''}`}
-                                  onClick={() => updateAttendeeDetail(idx, { role: 'jugador' })}
-                                >
-                                  <span className="role-opt-emoji">⚽</span>
-                                  <div className="role-opt-text">
-                                    <strong>Jugador del Club</strong>
-                                    <small>Entrada gratis · No participa del sorteo</small>
-                                  </div>
-                                  {detail.role === 'jugador' && <Check size={16} className="role-check" />}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className={`role-option-btn ${detail.role === 'acompanante' ? 'selected role-acompanante' : ''}`}
-                                  onClick={() => updateAttendeeDetail(idx, { role: 'acompanante' })}
-                                >
-                                  <span className="role-opt-emoji">🎟️</span>
-                                  <div className="role-opt-text">
-                                    <strong>Acompañante</strong>
-                                    <small>{money(unitPrice)} · Incluye N° para sorteo</small>
-                                  </div>
-                                  {detail.role === 'acompanante' && <Check size={16} className="role-check" />}
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* 2. Selección de Categoría */}
-                            <div className="attendee-step-field">
-                              <label className="attendee-field-label">
-                                <b>2. Categoría *</b>
-                                <small style={{ color: '#8a9ab5' }}>Seleccioná la división o categoría</small>
-                              </label>
-                              <select
-                                className="category-select-input"
-                                value={detail.category}
-                                onChange={e => updateAttendeeDetail(idx, { category: e.target.value as Category })}
-                                required
-                              >
-                                {CATEGORIES.map(cat => (
-                                  <option key={cat} value={cat}>
-                                    Categoría {cat}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* 3. Nombre del asistente */}
-                            <div className="attendee-step-field">
-                              <label className="attendee-field-label">
-                                <b>3. Nombre y Apellido del Asistente *</b>
-                              </label>
-                              <input
-                                type="text"
-                                className="attendee-text-input"
-                                required
-                                placeholder={idx === 0 ? (buyer.fullName || 'Nombre y Apellido') : `Nombre y Apellido Entrada #${idx + 1}`}
-                                value={detail.name}
-                                onChange={e => updateAttendeeDetail(idx, { name: e.target.value })}
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Resumen de cobro en base a roles */}
-                <div className="ticket-pricing-summary">
-                  <div className="summary-breakdown-row">
-                    <span>⚽ Jugadores ({playerCount}):</span>
-                    <strong className="text-green">¡GRATIS! ($0)</strong>
-                  </div>
-                  <div className="summary-breakdown-row">
-                    <span>🎟️ Acompañantes ({companionCount}):</span>
-                    <strong>{money(companionCount * unitPrice)}</strong>
-                  </div>
-                  <div className="summary-divider-line" />
-                  <div className="summary-total-calc-row">
-                    <span>Total a pagar ({quantity} entrada{quantity > 1 ? 's' : ''}):</span>
-                    <strong className="total-amount-highlight">{money(total)}</strong>
-                  </div>
-                  {playerCount > 0 && (
-                    <p className="raffle-disclaimer-note">
-                      ℹ️ Las entradas de <b>Jugadores</b> no tienen costo y no participan en el sorteo de premios. Las entradas de <b>Acompañantes</b> cuentan con número oficial para el sorteo.
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Datos del Comprador / Titular del Pedido */}
+              {/* 1. Datos del Comprador / Responsable */}
               <div className="dark-card">
                 <div className="card-top-header">
                   <div className="card-icon-round"><WalletCards size={20} /></div>
                   <div>
-                    <h3>Datos de Contacto del Titular</h3>
-                    <p>Persona responsable del pedido y recepción de las entradas</p>
+                    <h3>1. Datos de Contacto del Responsable</h3>
+                    <p>Persona que gestiona la compra y a quien se enviarán las entradas con QR</p>
                   </div>
                 </div>
 
@@ -738,7 +581,7 @@ function App() {
                   </div>
 
                   <div className="form-field">
-                    <label>DNI del Titular *</label>
+                    <label>DNI del Responsable *</label>
                     <input
                       type="text"
                       required
@@ -763,7 +606,7 @@ function App() {
                   <div className="form-field full">
                     <label>
                       Correo Electrónico *
-                      <span className="highlight-tag">Aquí te llegarán los QR de tus entradas</span>
+                      <span className="highlight-tag">📧 Aquí te llegarán los QR de todas las entradas</span>
                     </label>
                     <input
                       type="email"
@@ -772,7 +615,269 @@ function App() {
                       value={buyer.email}
                       onChange={e => updateBuyer('email', e.target.value)}
                     />
-                    <small className="field-hint">Asegurate de escribirlo correctamente. Te enviaremos el correo con las entradas y códigos QR a esta casilla.</small>
+                    <small className="field-hint">Asegurate de escribirlo correctamente. Te enviaremos todas las entradas emitidas a este correo.</small>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Categoría y Rol del Titular */}
+              <div className="dark-card">
+                <div className="card-top-header">
+                  <div className="card-icon-round"><Users size={20} /></div>
+                  <div>
+                    <h3>2. Categoría y Rol en el Club</h3>
+                    <p>Indicá tu relación con el club y a qué categoría pertenecés o representás</p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                  {/* Selector de Rol */}
+                  <div>
+                    <label className="attendee-field-label" style={{ marginBottom: '8px' }}>
+                      <b>¿Quién es la persona titular? *</b>
+                    </label>
+                    <div className="role-selector-grid">
+                      <button
+                        type="button"
+                        className={`role-option-btn ${buyerRole === 'jugador' ? 'selected role-jugador' : ''}`}
+                        onClick={() => setBuyerRole('jugador')}
+                      >
+                        <span className="role-opt-emoji">⚽</span>
+                        <div className="role-opt-text">
+                          <strong>Soy Jugador del Club</strong>
+                          <small>¡Entrada Gratis! ($0) · No participa del sorteo</small>
+                        </div>
+                        {buyerRole === 'jugador' && <Check size={18} className="role-check" />}
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`role-option-btn ${buyerRole === 'acompanante' ? 'selected role-acompanante' : ''}`}
+                        onClick={() => {
+                          setBuyerRole('acompanante')
+                          if (companionCount === 0) setCompanionCount(1)
+                        }}
+                      >
+                        <span className="role-opt-emoji">🎟️</span>
+                        <div className="role-opt-text">
+                          <strong>Soy Acompañante / Familiar</strong>
+                          <small>{money(unitPrice)} · Incluye número para sorteo</small>
+                        </div>
+                        {buyerRole === 'acompanante' && <Check size={18} className="role-check" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Selector de Categoría */}
+                  <div>
+                    <label className="attendee-field-label" style={{ marginBottom: '8px' }}>
+                      <b>Categoría deportiva *</b>
+                      <small style={{ color: '#8a9ab5' }}>División o escuelita a la que asisten</small>
+                    </label>
+                    <select
+                      className="category-select-input"
+                      style={{ width: '100%' }}
+                      value={selectedCategory}
+                      onChange={e => setSelectedCategory(e.target.value as Category)}
+                      required
+                    >
+                      {CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>
+                          Categoría {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* 3. Acompañantes y Menores */}
+              <div className="dark-card">
+                <div className="card-top-header">
+                  <div className="card-icon-round"><Ticket size={20} /></div>
+                  <div>
+                    <h3>3. Entradas del Grupo</h3>
+                    <p>Indicá cuántos acompañantes van y si asisten menores de 3 años</p>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  {/* Stepper de Acompañantes Mayores (Pagan entrada) */}
+                  <div className="ticket-counter-box" style={{ background: 'rgba(14, 26, 43, 0.5)', border: '1px solid var(--navy-card-border)', borderRadius: '8px', padding: '16px' }}>
+                    <div className="counter-info">
+                      <strong>
+                        {buyerRole === 'jugador'
+                          ? '¿Cuántos acompañantes van con el jugador?'
+                          : 'Cantidad total de entradas acompañantes:'}
+                      </strong>
+                      <span className="price-big">{money(unitPrice)} <small style={{ fontSize: '13px', fontWeight: 'normal', color: '#8a9ab5' }}>c/u</small></span>
+                      <small style={{ color: '#fbbf24', display: 'block', marginTop: '4px', fontWeight: 'bold' }}>
+                        🎟️ Cada acompañante recibe su número oficial para el sorteo de premios
+                      </small>
+                    </div>
+
+                    <div className="stepper-modern">
+                      <button
+                        type="button"
+                        aria-label="Restar acompañante"
+                        onClick={() => {
+                          if (buyerRole === 'jugador') {
+                            setCompanionCount(c => Math.max(0, c - 1))
+                          } else {
+                            setCompanionCount(c => Math.max(1, c - 1))
+                          }
+                        }}
+                        disabled={buyerRole === 'jugador' ? companionCount <= 0 : companionCount <= 1}
+                      >
+                        <Minus size={18} />
+                      </button>
+                      <span className="stepper-val">{effectiveCompanionCount}</span>
+                      <button
+                        type="button"
+                        aria-label="Sumar acompañante"
+                        onClick={() => setCompanionCount(c => Math.min(20, (buyerRole === 'acompanante' && c === 0 ? 1 : c) + 1))}
+                        disabled={effectiveCompanionCount >= 20}
+                      >
+                        <Plus size={18} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Stepper de Menores de 3 años (GRATIS) */}
+                  <div className="ticket-counter-box" style={{ background: 'rgba(56, 189, 248, 0.05)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '8px', padding: '16px' }}>
+                    <div className="counter-info">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                        <strong style={{ color: '#38bdf8', fontSize: '15px' }}>👶 Menores de 3 años</strong>
+                        <span style={{ background: 'rgba(56, 189, 248, 0.2)', color: '#38bdf8', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '4px' }}>
+                          ¡NO PAGAN ENTRADA! ($0)
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '13px', color: '#c2cad7' }}>
+                        ¿Llevás niños menores de 3 años en el grupo?
+                      </span>
+                      <small style={{ color: '#8a9ab5', display: 'block', marginTop: '4px' }}>
+                        Ingreso bonificado sin costo · No participan del sorteo de premios
+                      </small>
+                    </div>
+
+                    <div className="stepper-modern">
+                      <button
+                        type="button"
+                        aria-label="Restar menor"
+                        onClick={() => setChildrenCount(c => Math.max(0, c - 1))}
+                        disabled={childrenCount <= 0}
+                      >
+                        <Minus size={18} />
+                      </button>
+                      <span className="stepper-val">{childrenCount}</span>
+                      <button
+                        type="button"
+                        aria-label="Sumar menor"
+                        onClick={() => setChildrenCount(c => Math.min(10, c + 1))}
+                        disabled={childrenCount >= 10}
+                      >
+                        <Plus size={18} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Opción desplegable opcional para personalizar nombres */}
+                  {(effectiveCompanionCount > 0 || childrenCount > 0) && (
+                    <div style={{ marginTop: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setShowCustomNames(!showCustomNames)}
+                        style={{
+                          background: 'transparent',
+                          border: 'none',
+                          color: '#8a9ab5',
+                          fontSize: '13px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          cursor: 'pointer',
+                          padding: '4px 0',
+                          textDecoration: 'underline'
+                        }}
+                      >
+                        {showCustomNames ? '▲ Ocultar personalización de nombres' : '▼ ¿Querés personalizar los nombres en cada entrada? (Opcional)'}
+                      </button>
+
+                      {showCustomNames && (
+                        <div style={{ background: 'rgba(6, 13, 23, 0.7)', border: '1px solid var(--navy-card-border)', borderRadius: '8px', padding: '14px', marginTop: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          <p style={{ fontSize: '12px', color: '#8a9ab5', margin: 0 }}>
+                            Si no los completás, las entradas se emitirán automáticamente a nombre del titular ({buyer.fullName || 'Responsable'}).
+                          </p>
+
+                          {Array.from({ length: effectiveCompanionCount }).map((_, idx) => (
+                            <div key={`comp-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '11px', color: '#fbbf24', fontWeight: 600 }}>
+                                Nombre Acompañante #{idx + 1}
+                              </label>
+                              <input
+                                type="text"
+                                placeholder={buyerRole === 'acompanante' && idx === 0 ? (buyer.fullName || 'Nombre Titular') : `${buyer.fullName || 'Titular'} - Acompañante ${idx + 1}`}
+                                value={customCompanionNames[idx] || ''}
+                                onChange={e => {
+                                  const updated = [...customCompanionNames]
+                                  updated[idx] = e.target.value
+                                  setCustomCompanionNames(updated)
+                                }}
+                                style={{ background: 'rgba(14, 26, 43, 0.8)', border: '1px solid var(--navy-card-border)', borderRadius: '4px', padding: '8px 10px', color: '#fff', fontSize: '13px' }}
+                              />
+                            </div>
+                          ))}
+
+                          {Array.from({ length: childrenCount }).map((_, idx) => (
+                            <div key={`child-${idx}`} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 600 }}>
+                                Nombre Menor &lt;3 años #{idx + 1}
+                              </label>
+                              <input
+                                type="text"
+                                placeholder={`${buyer.fullName || 'Titular'} - Menor <3 años ${childrenCount > 1 ? idx + 1 : ''}`}
+                                value={customChildNames[idx] || ''}
+                                onChange={e => {
+                                  const updated = [...customChildNames]
+                                  updated[idx] = e.target.value
+                                  setCustomChildNames(updated)
+                                }}
+                                style={{ background: 'rgba(14, 26, 43, 0.8)', border: '1px solid var(--navy-card-border)', borderRadius: '4px', padding: '8px 10px', color: '#fff', fontSize: '13px' }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Resumen de cobro en base a roles */}
+                  <div className="ticket-pricing-summary" style={{ marginTop: '10px' }}>
+                    {playerCount > 0 && (
+                      <div className="summary-breakdown-row">
+                        <span>⚽ Entrada Jugador ({playerCount}):</span>
+                        <strong className="text-green">¡GRATIS! ($0)</strong>
+                      </div>
+                    )}
+                    {childrenCount > 0 && (
+                      <div className="summary-breakdown-row">
+                        <span>👶 Menores de 3 años ({childrenCount}):</span>
+                        <strong style={{ color: '#38bdf8' }}>¡GRATIS! ($0)</strong>
+                      </div>
+                    )}
+                    <div className="summary-breakdown-row">
+                      <span>🎟️ Acompañantes que pagan ({effectiveCompanionCount}):</span>
+                      <strong>{money(effectiveCompanionCount * unitPrice)}</strong>
+                    </div>
+                    <div className="summary-breakdown-row" style={{ fontSize: '12px', color: '#8a9ab5' }}>
+                      <span>Categoría seleccionada:</span>
+                      <b style={{ color: '#ffffff' }}>{selectedCategory}</b>
+                    </div>
+                    <div className="summary-divider-line" />
+                    <div className="summary-total-calc-row">
+                      <span>Total a pagar ({quantity} entrada{quantity > 1 ? 's' : ''}):</span>
+                      <strong className="total-amount-highlight">{money(total)}</strong>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -796,7 +901,7 @@ function App() {
                     </>
                   ) : (
                     <>
-                      <span>CONTINUAR A CONFIRMAR REGISTRO GRATUITO ($0)</span>
+                      <span>CONFIRMAR REGISTRO GRATUITO ($0)</span>
                       <ArrowRight size={18} />
                     </>
                   )}
@@ -871,7 +976,11 @@ function App() {
                       </div>
                       <div className="cbu-row">
                         <span>Desglose de cobro:</span>
-                        <b>{companionCount} acompañante(s) a {money(unitPrice)} {playerCount > 0 ? `(+ ${playerCount} jugador/es gratis)` : ''}</b>
+                        <b>
+                          {effectiveCompanionCount} acompañante(s) a {money(unitPrice)}
+                          {playerCount > 0 ? ` (+ ${playerCount} jugador gratis)` : ''}
+                          {childrenCount > 0 ? ` (+ ${childrenCount} menor/es <3 años gratis)` : ''}
+                        </b>
                       </div>
                       <div className="cbu-row">
                         <span>Titular de la cuenta:</span>
@@ -885,18 +994,18 @@ function App() {
                   </div>
                 </div>
               ) : (
-                /* Tarjeta especial para Orden de $0 (Solo Jugadores) */
+                /* Tarjeta especial para Orden de $0 (Solo Jugadores / Menores) */
                 <div className="payment-options-col">
                   <div className="dark-card zero-cost-banner-card">
-                    <div className="zero-icon-pill">⚽ ENTRADA JUGADOR ATSC</div>
+                    <div className="zero-icon-pill">⚽ ENTRADA BONIFICADA ATSC</div>
                     <h3 style={{ fontSize: '22px', margin: '14px 0 8px', color: '#00d2b4' }}>
                       ¡Registro sin costo de acceso!
                     </h3>
                     <p style={{ color: '#c2cad7', lineHeight: '1.6', fontSize: '14px' }}>
-                      Como seleccionaste únicamente entradas de jugadores ({quantity} entrada{quantity > 1 ? 's' : ''}), <b>el valor total es de $0</b>. No tenés que realizar ninguna transferencia ni enviar comprobante bancario.
+                      Como seleccionaste únicamente entradas bonificadas ({quantity} entrada{quantity > 1 ? 's' : ''}), <b>el valor total es de $0</b>. No tenés que realizar ninguna transferencia ni enviar comprobante bancario.
                     </p>
                     <div style={{ marginTop: '18px', padding: '14px', background: 'rgba(0, 210, 180, 0.08)', borderRadius: '8px', border: '1px solid rgba(0, 210, 180, 0.25)', fontSize: '13px', color: '#ffffff' }}>
-                      🎟️ <b>Recordatorio de sorteo:</b> Las entradas de jugadores permiten el acceso gratuito al evento pero no cuentan con número para el sorteo de premios.
+                      🎟️ <b>Recordatorio de sorteo:</b> Las entradas bonificadas permiten el acceso gratuito al evento pero no cuentan con número para el sorteo de premios.
                     </div>
                   </div>
                 </div>
@@ -928,9 +1037,19 @@ function App() {
                       <span>⚽ Jugadores ($0):</span>
                       <b className="text-green">{playerCount}</b>
                     </div>
+                    {childrenCount > 0 && (
+                      <div className="sum-row">
+                        <span>👶 Menores &lt;3 años ($0):</span>
+                        <b style={{ color: '#38bdf8' }}>{childrenCount}</b>
+                      </div>
+                    )}
                     <div className="sum-row">
                       <span>🎟️ Acompañantes ({money(unitPrice)}):</span>
-                      <b>{companionCount}</b>
+                      <b>{effectiveCompanionCount}</b>
+                    </div>
+                    <div className="sum-row" style={{ fontSize: '12px' }}>
+                      <span>Categoría:</span>
+                      <b>{selectedCategory}</b>
                     </div>
                     <div className="sum-row total-highlight">
                       <span>TOTAL A PAGAR:</span>
@@ -1057,8 +1176,12 @@ function App() {
                 {orderConfirmation.tickets.map((t, idx) => (
                   <div key={idx} className="conf-ticket-card">
                     <div className="conf-ticket-top">
-                      {t.isPlayer ? (
-                        <span className="badge-player-pill">⚽ JUGADOR (Sin sorteo)</span>
+                      {t.role === 'menor' ? (
+                        <span className="badge-player-pill" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
+                          👶 MENOR &lt;3 AÑOS ($0 · Sin sorteo)
+                        </span>
+                      ) : t.isPlayer ? (
+                        <span className="badge-player-pill">⚽ JUGADOR ($0 · Sin sorteo)</span>
                       ) : (
                         <span className="badge-raffle-pill">🎟️ SORTEO N° {t.ticketNumber}</span>
                       )}

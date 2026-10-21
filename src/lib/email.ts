@@ -38,9 +38,17 @@ export async function sendTicketsEmail(
         t.ticketNumber === 'Sin sorteo' ||
         /jugador/i.test(t.attendeeName)
 
+      const isChild =
+        t.role === 'menor' ||
+        t.ticketNumber === 'MENOR' ||
+        /menor/i.test(t.attendeeName)
+
       const headerTitle = isPlayer
         ? `<strong style="color: #ffffff; font-size: 18px; letter-spacing: 0.5px;">ENTRADA JUGADOR</strong>
            <div style="color: #60a5fa; font-size: 11px; font-weight: bold; margin-top: 3px;">⚽ ACCESO BONIFICADO (SIN SORTEO)</div>`
+        : isChild
+        ? `<strong style="color: #ffffff; font-size: 18px; letter-spacing: 0.5px;">MENOR DE 3 AÑOS</strong>
+           <div style="color: #38bdf8; font-size: 11px; font-weight: bold; margin-top: 3px;">👶 ENTRADA BONIFICADA ($0 · SIN SORTEO)</div>`
         : `<strong style="color: #ffffff; font-size: 18px; letter-spacing: 0.5px;">ENTRADA N° ${t.ticketNumber.replace(/^N°\s*/i, '')}</strong>
            <div style="color: #fbbf24; font-size: 11px; font-weight: bold; margin-top: 3px;">🎟️ NÚMERO VÁLIDO PARA EL SORTEO</div>`
 

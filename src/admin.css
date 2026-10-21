@@ -2360,3 +2360,394 @@
     align-items: stretch;
   }
 }
+
+/* ══════════════════════════════════════════════════════════
+   SECCIÓN PADRÓN Y CONTEO POR CATEGORÍAS
+   ══════════════════════════════════════════════════════════ */
+.padron-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+
+.padron-header-titles h2 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 24px;
+  margin: 0 0 4px;
+  color: #ffffff;
+}
+
+.padron-header-titles p {
+  margin: 0;
+  font-size: 13px;
+  color: #8496ad;
+}
+
+.padron-actions-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.btn-print-padron {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #d92736;
+  color: #ffffff;
+  border: 1px solid #d92736;
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 14px rgba(217, 39, 54, 0.35);
+}
+
+.btn-print-padron:hover {
+  background: #b51f2c;
+  transform: translateY(-1px);
+}
+
+.btn-export-csv {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-export-csv:hover {
+  background: rgba(16, 185, 129, 0.2);
+}
+
+.btn-copy-wa {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(37, 211, 102, 0.12);
+  border: 1px solid rgba(37, 211, 102, 0.35);
+  color: #25d366;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-copy-wa:hover {
+  background: rgba(37, 211, 102, 0.22);
+}
+
+.padron-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.padron-stat-box {
+  background: #0a1524;
+  border: 1px solid #182d49;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.padron-stat-box span {
+  font-size: 11px;
+  font-weight: 800;
+  display: block;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.padron-stat-box strong {
+  font-family: 'Oswald', sans-serif;
+  font-size: 28px;
+  color: #ffffff;
+  display: block;
+}
+
+.padron-stat-box small {
+  font-size: 11px;
+  color: #8496ad;
+}
+
+.padron-filters-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #0a1524;
+  border: 1px solid #182d49;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+}
+
+.padron-filter-select {
+  background: #070e19;
+  border: 1px solid #182d49;
+  color: #ffffff;
+  padding: 7px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.padron-summary-table-wrap {
+  background: #0a1524;
+  border: 1px solid #182d49;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin-bottom: 24px;
+}
+
+.padron-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 13px;
+}
+
+.padron-summary-table th {
+  background: #070e19;
+  padding: 12px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #8496ad;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid #182d49;
+}
+
+.padron-summary-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(24, 45, 73, 0.6);
+  color: #cfd8e3;
+}
+
+.padron-summary-table tr:hover td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.padron-summary-table tfoot td {
+  background: #060e1a;
+  font-weight: 800;
+  color: #ffffff;
+  border-top: 2px solid #182d49;
+}
+
+.padron-category-section {
+  background: #0a1524;
+  border: 1px solid #182d49;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.padron-category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  background: #070e19;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid transparent;
+}
+
+.padron-category-header.open {
+  border-bottom-color: #182d49;
+}
+
+.padron-cat-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 17px;
+  color: #ffffff;
+}
+
+.padron-cat-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Badge roles */
+.role-badge-jugador {
+  background: rgba(0, 210, 180, 0.12);
+  color: #00d2b4;
+  border: 1px solid rgba(0, 210, 180, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.role-badge-acompanante {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.role-badge-menor {
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+/* Print CSS */
+.padron-print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 10mm;
+    size: A4 portrait;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: Arial, sans-serif !important;
+  }
+
+  .admin-dashboard, .site-shell {
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    min-height: auto !important;
+  }
+
+  /* Ocultar elementos no imprimibles */
+  .dashboard-header,
+  .dash-tabs,
+  .dash-stats,
+  .scanner-section,
+  .table-controls-bar,
+  .padron-filters-bar,
+  .padron-actions-group,
+  .btn-print-padron,
+  .btn-export-csv,
+  .btn-copy-wa,
+  .btn-action-checkin,
+  .no-print,
+  footer {
+    display: none !important;
+  }
+
+  .padron-print-only {
+    display: block !important;
+    margin-bottom: 20px !important;
+    border-bottom: 2px solid #000000 !important;
+    padding-bottom: 12px !important;
+  }
+
+  .padron-print-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 15px !important;
+  }
+
+  .padron-print-header h1 {
+    font-size: 18pt !important;
+    margin: 0 !important;
+    color: #000000 !important;
+  }
+
+  .padron-print-header p {
+    font-size: 10pt !important;
+    margin: 4px 0 0 !important;
+    color: #444444 !important;
+  }
+
+  .padron-summary-table-wrap,
+  .padron-category-section {
+    background: transparent !important;
+    border: none !important;
+    margin-bottom: 18px !important;
+    page-break-inside: avoid !important;
+  }
+
+  .padron-summary-table,
+  .admin-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    color: #000000 !important;
+    font-size: 9pt !important;
+  }
+
+  .padron-summary-table th,
+  .padron-summary-table td,
+  .admin-table th,
+  .admin-table td {
+    border: 1px solid #555555 !important;
+    padding: 5px 6px !important;
+    color: #000000 !important;
+    background: #ffffff !important;
+  }
+
+  .padron-summary-table th,
+  .admin-table th {
+    background: #e5e7eb !important;
+    font-weight: bold !important;
+  }
+
+  .padron-summary-table tfoot td {
+    background: #f3f4f6 !important;
+    font-weight: bold !important;
+  }
+
+  .role-badge-jugador,
+  .role-badge-acompanante,
+  .role-badge-menor {
+    background: transparent !important;
+    color: #000000 !important;
+    border: 1px solid #888888 !important;
+    padding: 1px 4px !important;
+    font-size: 8pt !important;
+  }
+
+  .padron-print-signatures {
+    display: flex !important;
+    justify-content: space-between !important;
+    margin-top: 40px !important;
+    page-break-inside: avoid !important;
+  }
+
+  .signature-box {
+    width: 45% !important;
+    border-top: 1px solid #000000 !important;
+    padding-top: 6px !important;
+    font-size: 9pt !important;
+    text-align: center !important;
+  }
+}

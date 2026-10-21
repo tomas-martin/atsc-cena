@@ -5,18 +5,15 @@ import {
   LockKeyhole, LogOut, RefreshCw,
   Camera, CheckCircle2, XCircle, AlertTriangle, Users,
   Ticket, ArrowLeft, Search, Check, Send,
-  UserPlus, Minus, Plus,
   Gift, Trophy, Sparkles, Dices, RotateCcw, Volume2, VolumeX,
-  Copy, Trash2, Award, ChevronDown, ChevronUp
+  Copy, Trash2, Award, ChevronDown, ChevronUp,
+  Printer, FileText, Share2, Download, Filter
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import { sendTicketsEmail } from './lib/email'
 import {
   type OrderConfirmation,
   type IssuedTicket,
-  type AttendeeRole,
-  type Category,
-  type AttendeeDetail,
   CATEGORIES
 } from './types'
 import ClubLogo from './ClubLogo'
@@ -61,6 +58,7 @@ export interface RaffleParticipant {
   ticketNumber: string
   order?: OrderRow
   isCheckedIn: boolean
+  isPhysical?: boolean
 }
 
 export interface WinnerRecord {
@@ -78,16 +76,41 @@ export default function AdminPage({
   logoUrl?: string | null
 }) {
   const clubLogo = logoUrl || (import.meta.env.VITE_CLUB_LOGO_URL as string) || null
-  // Autenticación exclusiva por Email y Contraseña (Supabase Auth)
-  const [signedIn, setSignedIn] = useState(false)
-  const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  // Roles de usuario del panel: 'superuser' (acceso total) o 'staff' (solo control en puerta)
+  const [userRole, setUserRole] = useState<'superuser' | 'staff' | null>(() => {
+    try {
+      const saved = localStorage.getItem('atsc_admin_session_v2')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed.role === 'superuser' || parsed.role === 'staff') {
+          return parsed.role
+        }
+      }
+    } catch {}
+    return null
+  })
+  const [signedIn, setSignedIn] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('atsc_admin_session_v2')
+      return !!saved
+    } catch {
+      return false
+    }
+  })
+  const [userEmail, setUserEmail] = useState<string | null>(() => {
+    try {
+      const saved = localStorage.getItem('atsc_admin_session_v2')
+      if (saved) return JSON.parse(saved).username || null
+    } catch {}
+    return null
+  })
+  const [usernameInput, setUsernameInput] = useState('')
+  const [passwordInput, setPasswordInput] = useState('')
   const [authError, setAuthError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Tabs del panel: 'scanner' | 'presencial' | 'tickets' | 'orders' | 'sorteo'
-  const [activeTab, setActiveTab] = useState<'scanner' | 'presencial' | 'tickets' | 'orders' | 'sorteo'>('scanner')
+  // Tabs del panel: 'scanner' | 'presencial' | 'sorteo' | 'padron' | 'tickets' | 'orders'
+  const [activeTab, setActiveTab] = useState<'scanner' | 'presencial' | 'sorteo' | 'padron' | 'tickets' | 'orders'>('scanner')
   const [unitPrice, setUnitPrice] = useState<number>(25000)
 
   // Datos
@@ -98,68 +121,77 @@ export default function AdminPage({
   const [approvingOrderId, setApprovingOrderId] = useState<string | null>(null)
   const [actionFeedback, setActionFeedback] = useState<{ message: string; success: boolean } | null>(null)
 
-  // ── Formulario de Venta Presencial en Puerta ──
-  const [presencialBuyer, setPresencialBuyer] = useState({
-    fullName: '',
-    dni: '',
-    email: '',
-    phone: '',
+  // ── Configuración del Talonario Físico para el Sorteo ──
+  const [physicalConfig, setPhysicalConfig] = useState<{
+    startNumber: number
+    endNumber: number
+    soldCount: number
+  }>(() => {
+    try {
+      const saved = localStorage.getItem('atsc_physical_raffle_v1')
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return {
+      startNumber: 1000,
+      endNumber: 1100,
+      soldCount: 0
+    }
   })
-  const [presencialQty, setPresencialQty] = useState(1)
-  const [presencialAttendees, setPresencialAttendees] = useState<AttendeeDetail[]>([
-    { name: '', role: 'jugador', category: 'Primera' }
-  ])
-  const [presencialPaymentMethod, setPresencialPaymentMethod] = useState<'efectivo' | 'transferencia' | 'otro'>('efectivo')
-  const [presencialCheckInImmediate, setPresencialCheckInImmediate] = useState(false)
-  const [presencialSubmitting, setPresencialSubmitting] = useState(false)
-  const [presencialError, setPresencialError] = useState('')
-  const [presencialSuccessData, setPresencialSuccessData] = useState<{
-    orderId: string
-    buyer: { fullName: string; dni: string; email: string; phone: string }
-    totalArs: number
-    quantity: number
-    paymentMethod: string
-    checkedInImmediate: boolean
-    tickets: IssuedTicket[]
-    qrDataUrls: Record<string, string>
-    emailMessage?: string
-    emailSuccess?: boolean
-  } | null>(null)
 
-  // Sincronizar asistentes presenciales con la cantidad seleccionada
+  // Sincronizar en localStorage
   useEffect(() => {
-    setPresencialAttendees(prev => {
-      return Array.from({ length: presencialQty }, (_, idx) => {
-        if (prev[idx]) return prev[idx]
-        return {
-          name: idx === 0 ? presencialBuyer.fullName : '',
-          role: idx === 0 ? 'jugador' : 'acompanante',
-          category: prev[0]?.category || 'Primera'
-        }
-      })
-    })
-  }, [presencialQty])
+    try {
+      localStorage.setItem('atsc_physical_raffle_v1', JSON.stringify(physicalConfig))
+    } catch {}
+  }, [physicalConfig])
 
-  const updatePresencialAttendee = (index: number, updates: Partial<AttendeeDetail>) => {
-    setPresencialAttendees(prev => {
-      const list = [...prev]
-      list[index] = { ...list[index], ...updates }
-      return list
+  const physicalTotalLot = Math.max(0, physicalConfig.endNumber - physicalConfig.startNumber + 1)
+
+  const handleUpdateStartNumber = (val: number) => {
+    setPhysicalConfig(prev => {
+      const start = Math.max(1, isNaN(val) ? 1 : val)
+      const end = Math.max(start, prev.endNumber)
+      const maxLot = end - start + 1
+      return {
+        startNumber: start,
+        endNumber: end,
+        soldCount: Math.min(prev.soldCount, maxLot)
+      }
     })
   }
 
-  // Cálculos de venta presencial
-  const presencialPlayerCount = useMemo(() => {
-    return presencialAttendees.filter(a => a.role === 'jugador').length
-  }, [presencialAttendees])
+  const handleUpdateEndNumber = (val: number) => {
+    setPhysicalConfig(prev => {
+      const end = Math.max(prev.startNumber, isNaN(val) ? prev.startNumber : val)
+      const maxLot = end - prev.startNumber + 1
+      return {
+        ...prev,
+        endNumber: end,
+        soldCount: Math.min(prev.soldCount, maxLot)
+      }
+    })
+  }
 
-  const presencialCompanionCount = useMemo(() => {
-    return presencialAttendees.filter(a => a.role === 'acompanante').length
-  }, [presencialAttendees])
+  const handleUpdateSoldCount = (count: number) => {
+    setPhysicalConfig(prev => ({
+      ...prev,
+      soldCount: Math.min(Math.max(0, isNaN(count) ? 0 : count), physicalTotalLot)
+    }))
+  }
 
-  const presencialTotal = useMemo(() => {
-    return presencialCompanionCount * unitPrice
-  }, [presencialCompanionCount, unitPrice])
+  const handleAdjustSoldCount = (delta: number) => {
+    setPhysicalConfig(prev => ({
+      ...prev,
+      soldCount: Math.min(Math.max(0, prev.soldCount + delta), physicalTotalLot)
+    }))
+  }
+
+  const handleSetAllSold = () => {
+    setPhysicalConfig(prev => ({
+      ...prev,
+      soldCount: physicalTotalLot
+    }))
+  }
 
   // Escáner QR
   const [scannerActive, setScannerActive] = useState(false)
@@ -175,9 +207,9 @@ export default function AdminPage({
   const lastScannedTimeRef = useRef<number>(0)
   const cooldownTimerRef = useRef<any>(null)
 
-  // Función para determinar si una entrada es de jugador (no cuenta para el sorteo)
+  // Función para determinar si una entrada es de jugador o menor (no cuenta para el sorteo)
   function isPlayerTicket(ticket: { attendee_name?: string; ticket_number?: number | null }): boolean {
-    return ticket.ticket_number == null || ticket.ticket_number <= 0 || /jugador/i.test(ticket.attendee_name || '')
+    return ticket.ticket_number == null || ticket.ticket_number <= 0 || /jugador/i.test(ticket.attendee_name || '') || /menor/i.test(ticket.attendee_name || '')
   }
 
   // Mapeo correlativo estable para sorteo (ÚNICAMENTE para acompañantes)
@@ -213,6 +245,200 @@ export default function AdminPage({
     return null
   }
 
+  // Extraer rol, categoría y nombre limpio de un ticket
+  function parseTicketInfo(ticket: { attendee_name?: string; ticket_number?: number | null }) {
+    const raw = (ticket.attendee_name || '').trim()
+
+    let role: 'jugador' | 'acompanante' | 'menor' = 'acompanante'
+    if (/menor/i.test(raw)) {
+      role = 'menor'
+    } else if (/jugador/i.test(raw) || ticket.ticket_number === 0 || ticket.ticket_number == null) {
+      role = 'jugador'
+    }
+
+    let category = 'Sin Categoría'
+    for (const cat of CATEGORIES) {
+      const reg = new RegExp(`(^|\\(|·|\\s)${cat}(\\)|\\s|$)`, 'i')
+      if (reg.test(raw)) {
+        category = cat
+        break
+      }
+    }
+
+    let cleanName = raw.replace(/\s*\([^)]*\)\s*$/, '').trim()
+    if (!cleanName) cleanName = raw
+
+    return {
+      raw,
+      cleanName,
+      role,
+      category
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════
+  // ESTADO Y LÓGICA DEL PADRÓN Y CONTEO POR CATEGORÍAS
+  // ═════════════════════════════════════════════════════════════════
+  const [padronCategoryFilter, setPadronCategoryFilter] = useState<string>('all')
+  const [padronRoleFilter, setPadronRoleFilter] = useState<'all' | 'jugador' | 'acompanante' | 'menor'>('all')
+  const [padronStatusFilter, setPadronStatusFilter] = useState<'all' | 'used' | 'valid'>('all')
+  const [padronSearch, setPadronSearch] = useState<string>('')
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({})
+
+  // Estadísticas agrupadas por categoría
+  const categoryStats = useMemo(() => {
+    const map = new Map<string, { players: TicketRow[]; companions: TicketRow[]; minors: TicketRow[] }>()
+
+    for (const cat of CATEGORIES) {
+      map.set(cat, { players: [], companions: [], minors: [] })
+    }
+    map.set('Sin Categoría', { players: [], companions: [], minors: [] })
+
+    tickets.forEach(ticket => {
+      if (ticket.status === 'cancelled') return
+      const { role, category } = parseTicketInfo(ticket)
+      const targetCat = map.has(category) ? category : 'Sin Categoría'
+      const entry = map.get(targetCat)!
+      if (role === 'jugador') entry.players.push(ticket)
+      else if (role === 'menor') entry.minors.push(ticket)
+      else entry.companions.push(ticket)
+    })
+
+    const list: Array<{
+      category: string
+      players: TicketRow[]
+      companions: TicketRow[]
+      minors: TicketRow[]
+      totalAttendees: number
+      checkedIn: number
+      pending: number
+    }> = []
+
+    map.forEach((entry, cat) => {
+      const totalAttendees = entry.players.length + entry.companions.length + entry.minors.length
+      if (totalAttendees > 0 || cat !== 'Sin Categoría') {
+        const allCategoryTickets = [...entry.players, ...entry.companions, ...entry.minors]
+        const checkedIn = allCategoryTickets.filter(t => t.status === 'used' || !!t.checked_in_at).length
+        list.push({
+          category: cat,
+          players: entry.players,
+          companions: entry.companions,
+          minors: entry.minors,
+          totalAttendees,
+          checkedIn,
+          pending: totalAttendees - checkedIn
+        })
+      }
+    })
+
+    return list
+  }, [tickets])
+
+  // Totales generales para el conteo
+  const padronTotals = useMemo(() => {
+    let totalPlayers = 0
+    let totalCompanions = 0
+    let totalMinors = 0
+    let totalAttendees = 0
+    let totalCheckedIn = 0
+
+    categoryStats.forEach(cs => {
+      totalPlayers += cs.players.length
+      totalCompanions += cs.companions.length
+      totalMinors += cs.minors.length
+      totalAttendees += cs.totalAttendees
+      totalCheckedIn += cs.checkedIn
+    })
+
+    return {
+      totalPlayers,
+      totalCompanions,
+      totalMinors,
+      totalAttendees,
+      totalCheckedIn,
+      totalPending: totalAttendees - totalCheckedIn
+    }
+  }, [categoryStats])
+
+  const toggleCategoryExpand = (cat: string) => {
+    setExpandedCategories(prev => ({
+      ...prev,
+      [cat]: prev[cat] === undefined ? false : !prev[cat]
+    }))
+  }
+
+  // Descarga en formato CSV / Excel
+  const handleDownloadCsv = () => {
+    const headers = [
+      'Categoría',
+      'Rol',
+      'Nombre Asistente',
+      'Nro Entrada / Sorteo',
+      'Titular Pedido',
+      'DNI Titular',
+      'Teléfono Titular',
+      'Email Titular',
+      'Estado Ingreso',
+      'Hora Ingreso'
+    ]
+
+    const rows = [headers]
+
+    categoryStats.forEach(cs => {
+      const allCat = [...cs.players, ...cs.companions, ...cs.minors]
+      allCat.forEach(ticket => {
+        const { cleanName, role, category } = parseTicketInfo(ticket)
+        const order = orders.find(o => o.id === ticket.order_id)
+        const isPlayer = isPlayerTicket(ticket)
+        const ticketNum = role === 'menor' ? 'MENOR' : isPlayer ? 'JUGADOR' : (getTicketDisplayNumber(ticket) || '')
+        const checkinStatus = (ticket.status === 'used' || !!ticket.checked_in_at) ? 'INGRESÓ' : 'SIN INGRESAR'
+        const checkinTime = ticket.checked_in_at ? new Date(ticket.checked_in_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : ''
+
+        rows.push([
+          category,
+          role.toUpperCase(),
+          cleanName,
+          ticketNum,
+          order?.buyer_full_name || '',
+          order?.buyer_dni || '',
+          order?.buyer_phone || '',
+          order?.buyer_email || '',
+          checkinStatus,
+          checkinTime
+        ])
+      })
+    })
+
+    const csvContent = '\uFEFF' + rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `padron_conteo_atsc_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    setActionFeedback({ message: '¡Planilla CSV descargada exitosamente!', success: true })
+  }
+
+  // Copiar resumen al portapapeles para WhatsApp
+  const handleCopyPadronWhatsApp = () => {
+    let msg = `📊 *REPORTE DE CONTEO - CENA ANDES TALLERES 2026*\n`
+    msg += `📅 *Fecha:* ${new Date().toLocaleDateString('es-AR')} ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs\n\n`
+    msg += `*TOTAL ASISTENTES:* ${padronTotals.totalAttendees}\n`
+    msg += `⚽ Jugadores: ${padronTotals.totalPlayers}\n`
+    msg += `🎟️ Acompañantes: ${padronTotals.totalCompanions}\n`
+    msg += `👶 Menores <3 años: ${padronTotals.totalMinors}\n`
+    msg += `🟢 Ingresados en puerta: ${padronTotals.totalCheckedIn} / ${padronTotals.totalAttendees}\n\n`
+    msg += `📋 *DESGLOSE POR CATEGORÍA:*\n`
+    categoryStats.forEach(cs => {
+      if (cs.totalAttendees > 0) {
+        msg += `▪️ *${cs.category}:* ${cs.totalAttendees} total (⚽ ${cs.players.length} jug · 🎟️ ${cs.companions.length} acomp${cs.minors.length > 0 ? ` · 👶 ${cs.minors.length} men` : ''}) - Presentes: ${cs.checkedIn}\n`
+      }
+    })
+    navigator.clipboard.writeText(msg)
+    setActionFeedback({ message: '¡Resumen de conteo copiado para WhatsApp!', success: true })
+  }
+
   // ═════════════════════════════════════════════════════════════════
   // ESTADO Y LÓGICA DEL SORTEO DE ENTRADAS AL AZAR
   // ═════════════════════════════════════════════════════════════════
@@ -243,10 +469,11 @@ export default function AdminPage({
     } catch {}
   }, [winnersHistory])
 
-  // Participantes elegibles para sorteo (solo acompañantes con número de sorteo)
+  // Participantes elegibles para sorteo (acompañantes online + entradas físicas del talonario)
   const raffleParticipants = useMemo<RaffleParticipant[]>(() => {
+    // 1. Entradas online (acompañantes con número de sorteo)
     const companionTickets = tickets.filter(t => !isPlayerTicket(t) && t.status !== 'cancelled')
-    return companionTickets.map(ticket => {
+    const onlineList: RaffleParticipant[] = companionTickets.map(ticket => {
       const ticketNumber = getTicketDisplayNumber(ticket) || '---'
       const order = orders.find(o => o.id === ticket.order_id)
       const isCheckedIn = ticket.status === 'used' || !!ticket.checked_in_at
@@ -254,10 +481,40 @@ export default function AdminPage({
         ticket,
         ticketNumber,
         order,
-        isCheckedIn
+        isCheckedIn,
+        isPhysical: false
       }
     })
-  }, [tickets, orders, ticketNumberMap])
+
+    // 2. Entradas físicas vendidas en mano (talonario ej: 1000..1024)
+    const physicalList: RaffleParticipant[] = []
+    const totalPhysicalToInclude = Math.min(
+      Math.max(0, physicalConfig.soldCount),
+      Math.max(0, physicalConfig.endNumber - physicalConfig.startNumber + 1)
+    )
+
+    for (let i = 0; i < totalPhysicalToInclude; i++) {
+      const num = physicalConfig.startNumber + i
+      const numStr = String(num)
+      physicalList.push({
+        ticket: {
+          id: `physical-${num}`,
+          ticket_number: num,
+          attendee_name: `Talonario Físico N° ${numStr}`,
+          qr_token: `physical-${num}`,
+          status: 'used',
+          created_at: new Date().toISOString(),
+          order_id: 'fisica',
+        },
+        ticketNumber: numStr,
+        order: undefined,
+        isCheckedIn: true,
+        isPhysical: true
+      })
+    }
+
+    return [...onlineList, ...physicalList]
+  }, [tickets, orders, ticketNumberMap, physicalConfig])
 
   const eligibleParticipants = useMemo(() => {
     return raffleParticipants.filter(p => {
@@ -431,26 +688,30 @@ export default function AdminPage({
     setTimeout(step, intervalTime)
   }
 
-  // Verificar sesión activa de Supabase Auth al montar
+  // Verificar sesión al montar
   useEffect(() => {
-    if (!supabase) return
-
-    // Obtener sesión actual
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        setSignedIn(true)
-        setUserEmail(session.user.email || null)
+    try {
+      const saved = localStorage.getItem('atsc_admin_session_v2')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed.role === 'superuser' || parsed.role === 'staff') {
+          setUserRole(parsed.role)
+          setUserEmail(parsed.username || (parsed.role === 'superuser' ? 'admin' : 'puerta'))
+          setSignedIn(true)
+          return
+        }
       }
-    })
+    } catch {}
 
-    // Escuchar cambios de autenticación (login / logout)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSignedIn(!!session?.user)
-      setUserEmail(session?.user?.email || null)
-    })
-
-    return () => {
-      subscription.unsubscribe()
+    // Fallback Supabase session
+    if (supabase) {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session?.user) {
+          setUserRole('superuser')
+          setSignedIn(true)
+          setUserEmail(session.user.email || null)
+        }
+      })
     }
   }, [])
 
@@ -526,44 +787,100 @@ export default function AdminPage({
     setLoading(false)
   }
 
-  // Login exclusivo con Supabase Auth (Email y Contraseña)
+  // Login simplificado con Usuario y Contraseña para Super Usuario y Control de Puerta
   async function handleAuthLogin(e: React.FormEvent) {
     e.preventDefault()
     setAuthError('')
-    if (!supabase) {
-      setAuthError('Supabase no está conectado. Verificá las variables de entorno.')
+    setLoading(true)
+
+    const u = usernameInput.trim().toLowerCase()
+    const p = passwordInput.trim()
+
+    // 1. Super Usuario (acceso total: escáner, talonario físico, sorteos, padrón y conteo con PDF, tickets y pedidos)
+    const isSuperUser =
+      (u === 'admin' || u === 'superadmin' || u === 'admin@atsc.com' || u === 'atsc') &&
+      (p === 'atsc2026' || p === 'admin' || p === 'admin2026')
+
+    // 2. Control en Puerta / Staff (solo puede escanear entradas o validar presencial en puerta)
+    const isStaffUser =
+      (u === 'puerta' || u === 'control' || u === 'staff' || u === 'entrada' || u === 'puerta@atsc.com') &&
+      (p === 'puerta2026' || p === 'puerta' || p === 'control' || p === 'staff' || p === 'atsc2026')
+
+    if (isSuperUser) {
+      setUserRole('superuser')
+      setUserEmail('Super Administrador')
+      setSignedIn(true)
+      setActiveTab('scanner')
+      try {
+        localStorage.setItem(
+          'atsc_admin_session_v2',
+          JSON.stringify({ role: 'superuser', username: 'Super Administrador', timestamp: Date.now() })
+        )
+      } catch {}
+      setLoading(false)
       return
     }
-    setLoading(true)
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    })
-    setLoading(false)
 
-    if (error) {
-      if (error.message.includes('Invalid login credentials')) {
-        setAuthError('Correo o contraseña incorrectos. Verificá haber creado el usuario en Supabase.')
-      } else if (error.message.includes('Email not confirmed')) {
-        setAuthError('El correo aún no fue confirmado en Supabase (tildá "Auto Confirm User" al crearlo).')
-      } else {
-        setAuthError(error.message)
-      }
-    } else if (data.session?.user) {
+    if (isStaffUser) {
+      setUserRole('staff')
+      setUserEmail('Control de Puerta')
       setSignedIn(true)
-      setUserEmail(data.session.user.email || null)
+      setActiveTab('scanner')
+      try {
+        localStorage.setItem(
+          'atsc_admin_session_v2',
+          JSON.stringify({ role: 'staff', username: 'Control de Puerta', timestamp: Date.now() })
+        )
+      } catch {}
+      setLoading(false)
+      return
     }
+
+    // 3. Fallback opcional Supabase Auth si se ingresó un correo real
+    if (supabase && u.includes('@')) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: usernameInput.trim(),
+          password: passwordInput,
+        })
+        if (!error && data.session?.user) {
+          setUserRole('superuser')
+          setUserEmail(data.session.user.email || 'Admin Supabase')
+          setSignedIn(true)
+          setActiveTab('scanner')
+          try {
+            localStorage.setItem(
+              'atsc_admin_session_v2',
+              JSON.stringify({ role: 'superuser', username: data.session.user.email, timestamp: Date.now() })
+            )
+          } catch {}
+          setLoading(false)
+          return
+        }
+      } catch {}
+    }
+
+    setLoading(false)
+    setAuthError('Usuario o contraseña no válidos. Podés usar "admin" / "atsc2026" o "puerta" / "puerta2026".')
   }
 
   async function handleSignOut() {
     stopScanner()
+    try {
+      localStorage.removeItem('atsc_admin_session_v2')
+    } catch {}
     if (supabase) {
-      await supabase.auth.signOut()
+      try {
+        await supabase.auth.signOut()
+      } catch {}
     }
+    setUserRole(null)
     setSignedIn(false)
     setUserEmail(null)
     setOrders([])
     setTickets([])
+    setUsernameInput('')
+    setPasswordInput('')
   }
 
   // ═════════════════════════════════════════════════════════════════
@@ -1074,255 +1391,18 @@ export default function AdminPage({
     }
   }
 
-  // ── Realizar venta presencial de entradas en puerta ──
-  async function handleRegisterPresencialSale(e: React.FormEvent) {
-    e.preventDefault()
-    setPresencialError('')
 
-    if (!presencialBuyer.fullName.trim() || !presencialBuyer.dni.trim() || !presencialBuyer.email.trim()) {
-      setPresencialError('Por favor completá los campos obligatorios del comprador (Nombre, DNI y Correo).')
-      return
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(presencialBuyer.email)) {
-      setPresencialError('Por favor ingresá un correo electrónico válido para despachar los códigos QR.')
-      return
-    }
-
-    // Validar nombres y categorías de cada asistente
-    for (let i = 0; i < presencialQty; i++) {
-      const att = presencialAttendees[i]
-      const effName = att?.name?.trim() || (i === 0 ? presencialBuyer.fullName.trim() : '')
-      if (!effName) {
-        setPresencialError(`Por favor completá el nombre del asistente para la Entrada #${i + 1}.`)
-        return
-      }
-      if (!att?.category) {
-        setPresencialError(`Por favor seleccioná la categoría para la Entrada #${i + 1}.`)
-        return
-      }
-    }
-
-    setPresencialSubmitting(true)
-
-    try {
-      let savedOrderId = ''
-
-      // 1. Guardar orden en Supabase como PAGADO
-      if (supabase) {
-        const { data: orderData, error: orderErr } = await supabase.from('orders').insert({
-          buyer_full_name: presencialBuyer.fullName.trim(),
-          buyer_dni: presencialBuyer.dni.trim(),
-          buyer_email: presencialBuyer.email.trim(),
-          buyer_phone: presencialBuyer.phone.trim() || 'Presencial',
-          quantity: presencialQty,
-          unit_price_ars: presencialQty > 0 ? Math.round(presencialTotal / presencialQty) : 0,
-          total_ars: presencialTotal,
-          payment_method: 'transferencia',
-          status: 'pagado',
-          transfer_reference: `Venta Presencial (${presencialPaymentMethod === 'efectivo' ? 'Efectivo en Puerta' : 'Transferencia en Puerta'})`,
-          paid_at: new Date().toISOString(),
-        }).select('id').single()
-
-        if (orderErr) {
-          console.error('Error al insertar orden presencial:', orderErr)
-          throw new Error(`Error en la base de datos (${orderErr.code}): ${orderErr.message}`)
-        }
-
-        if (orderData?.id) {
-          savedOrderId = orderData.id
-        }
-      }
-
-      const displayOrderId = savedOrderId
-        ? `ATSC-${savedOrderId.slice(0, 6).toUpperCase()}`
-        : `ATSC-${Math.floor(100000 + Math.random() * 900000)}`
-
-      // 2. Determinar número correlativo de sorteo (ÚNICAMENTE para acompañantes)
-      let nextTicketNumber = 1
-      if (supabase) {
-        try {
-          const { data: highestTicket } = await supabase
-            .from('tickets')
-            .select('ticket_number')
-            .not('ticket_number', 'is', null)
-            .gt('ticket_number', 0)
-            .order('ticket_number', { ascending: false })
-            .limit(1)
-
-          if (highestTicket && highestTicket.length > 0 && typeof highestTicket[0].ticket_number === 'number') {
-            nextTicketNumber = highestTicket[0].ticket_number + 1
-          } else {
-            const { count } = await supabase
-              .from('tickets')
-              .select('*', { count: 'exact', head: true })
-              .gt('ticket_number', 0)
-            if (typeof count === 'number' && !isNaN(count)) {
-              nextTicketNumber = count + 1
-            }
-          }
-        } catch { }
-      }
-
-      // 3. Generar tickets presenciales
-      let companionRaffleCount = 0
-      const checkInTimestamp = presencialCheckInImmediate ? new Date().toISOString() : null
-
-      const issuedTickets: IssuedTicket[] = Array.from({ length: presencialQty }, (_, i) => {
-        const att = presencialAttendees[i] || {
-          name: i === 0 ? presencialBuyer.fullName : `Asistente ${i + 1}`,
-          role: (i === 0 ? 'jugador' : 'acompanante') as AttendeeRole,
-          category: 'Primera' as Category,
-        }
-
-        const isPlayer = att.role === 'jugador'
-        let formattedNum = 'JUGADOR'
-        if (!isPlayer) {
-          const currentNum = nextTicketNumber + companionRaffleCount
-          formattedNum = String(currentNum).padStart(3, '0')
-          companionRaffleCount++
-        }
-
-        const rawName = (att.name && att.name.trim())
-          ? att.name.trim()
-          : (i === 0 ? presencialBuyer.fullName.trim() : `Asistente ${i + 1}`)
-
-        const formattedAttendeeName = `${rawName} (${isPlayer ? 'Jugador' : 'Acompañante'} · ${att.category})`
-        const uuidToken = (typeof crypto !== 'undefined' && crypto.randomUUID)
-          ? crypto.randomUUID()
-          : `atsc-${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`
-
-        return {
-          ticketNumber: formattedNum,
-          attendeeName: formattedAttendeeName,
-          qrToken: uuidToken,
-          orderId: displayOrderId,
-          eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
-          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
-          isPlayer,
-          role: att.role,
-          category: att.category,
-        }
-      })
-
-      // 4. Guardar tickets en Supabase
-      if (supabase && savedOrderId) {
-        const ticketRows = issuedTickets.map((t) => ({
-          order_id: savedOrderId,
-          attendee_name: t.attendeeName,
-          qr_token: t.qrToken,
-          status: presencialCheckInImmediate ? 'used' : 'valid',
-          checked_in_at: checkInTimestamp,
-          ticket_number: t.isPlayer ? null : parseInt(t.ticketNumber, 10),
-        }))
-        const { error: ticketErr } = await supabase.from('tickets').insert(ticketRows)
-        if (ticketErr) {
-          if (ticketErr.code === '23502') {
-            const retryRows = ticketRows.map(r => ({
-              ...r,
-              ticket_number: r.ticket_number ?? 0
-            }))
-            await supabase.from('tickets').insert(retryRows)
-          } else if (ticketErr.code === '42703') {
-            const fallbackRows = ticketRows.map(({ ticket_number, ...rest }) => rest)
-            await supabase.from('tickets').insert(fallbackRows)
-          } else {
-            console.error('Error al guardar tickets presenciales:', ticketErr)
-          }
-        }
-      }
-
-      // 5. Generar códigos QR con QRCode
-      const generatedQrs: Record<string, string> = {}
-      for (const t of issuedTickets) {
-        const qrContent = JSON.stringify({
-          app: 'ATSC-CENA-2026',
-          ticket: t.isPlayer ? 'JUGADOR' : `N° ${t.ticketNumber}`,
-          attendee: t.attendeeName,
-          token: t.qrToken,
-          order: t.orderId
-        })
-        const dataUrl = await QRCode.toDataURL(qrContent, {
-          width: 320,
-          margin: 2,
-          color: {
-            dark: '#070e1a',
-            light: '#ffffff',
-          },
-        })
-        generatedQrs[t.qrToken] = dataUrl
-      }
-
-      // 6. Despachar email inmediatamente con Nodemailer SMTP
-      const conf: OrderConfirmation = {
-        orderId: displayOrderId,
-        buyer: {
-          fullName: presencialBuyer.fullName,
-          dni: presencialBuyer.dni,
-          email: presencialBuyer.email,
-          phone: presencialBuyer.phone,
-        },
-        quantity: presencialQty,
-        totalArs: presencialTotal,
-        paymentMethod: 'transferencia',
-        tickets: issuedTickets,
-        emailSent: false,
-      }
-
-      let emailResult = { success: false, message: '' }
-      try {
-        emailResult = await sendTicketsEmail(conf, generatedQrs)
-      } catch (err: any) {
-        console.error('Error al despachar correo en venta presencial:', err)
-        emailResult = { success: false, message: err?.message || 'Error de envío' }
-      }
-
-      // 7. Actualizar listas del panel
-      void loadAllData()
-
-      // 8. Mostrar pantalla de éxito con los QR generados
-      setPresencialSuccessData({
-        orderId: displayOrderId,
-        buyer: { ...presencialBuyer },
-        totalArs: presencialTotal,
-        quantity: presencialQty,
-        paymentMethod: presencialPaymentMethod,
-        checkedInImmediate: presencialCheckInImmediate,
-        tickets: issuedTickets,
-        qrDataUrls: generatedQrs,
-        emailMessage: emailResult.message,
-        emailSuccess: emailResult.success,
-      })
-
-    } catch (err: any) {
-      console.error('Error en venta presencial:', err)
-      setPresencialError(err?.message || 'Ocurrió un error al procesar la venta presencial.')
-    } finally {
-      setPresencialSubmitting(false)
-    }
-  }
-
-  // Reset para nueva venta presencial
-  function handleResetPresencialForm() {
-    setPresencialSuccessData(null)
-    setPresencialBuyer({ fullName: '', dni: '', email: '', phone: '' })
-    setPresencialQty(1)
-    setPresencialAttendees([{ name: '', role: 'jugador', category: 'Primera' }])
-    setPresencialPaymentMethod('efectivo')
-    setPresencialCheckInImmediate(false)
-    setPresencialError('')
-  }
 
   const money = (n: number) =>
     new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(n)
 
   // ═════════════════════════════════════════════════════════════════
-  // PANTALLA DE LOGIN AL PANEL
+  // PANTALLA DE LOGIN AL PANEL (SUPER USUARIO O CONTROL EN PUERTA)
   // ═════════════════════════════════════════════════════════════════
   if (!signedIn) {
     return (
       <main className="admin-wrap">
-        <div className="admin-login">
+        <div className="admin-login" style={{ maxWidth: '440px' }}>
           <div className="admin-header-logo">
             <ClubLogo url={clubLogo} size="md" />
             <div>
@@ -1333,14 +1413,16 @@ export default function AdminPage({
 
           <form onSubmit={handleAuthLogin} className="login-form">
             <label>
-              Correo Electrónico de Administrador
+              Usuario
               <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
+                type="text"
+                value={usernameInput}
+                onChange={e => setUsernameInput(e.target.value)}
                 required
                 autoFocus
-                placeholder="tu-correo@gmail.com"
+                placeholder="admin o puerta"
+                autoCapitalize="none"
+                autoCorrect="off"
               />
             </label>
 
@@ -1348,8 +1430,8 @@ export default function AdminPage({
               Contraseña
               <input
                 type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
+                value={passwordInput}
+                onChange={e => setPasswordInput(e.target.value)}
                 required
                 placeholder="••••••••"
               />
@@ -1360,15 +1442,76 @@ export default function AdminPage({
             <button className="admin-primary" disabled={loading} type="submit">
               {loading ? (
                 <>
-                  <RefreshCw size={16} className="spinner" /> Verificando...
+                  <RefreshCw size={16} className="spinner" /> Accediendo...
                 </>
               ) : (
                 <>
-                  <LockKeyhole size={16} /> Iniciar Sesión como Administrador
+                  <LockKeyhole size={16} /> Iniciar Sesión
                 </>
               )}
             </button>
           </form>
+
+          {/* Accesos rápidos por perfil */}
+          <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #1c3252' }}>
+            <p style={{ fontSize: '11px', fontWeight: 700, color: '#8a9ab5', textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: '10px', textAlign: 'center' }}>
+              Acceso Rápido por Perfil:
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsernameInput('admin')
+                  setPasswordInput('atsc2026')
+                }}
+                style={{
+                  background: 'rgba(251, 191, 36, 0.08)',
+                  border: '1px solid rgba(251, 191, 36, 0.25)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#fbbf24',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span>👑 <strong>Super Usuario</strong> (Acceso Total)</span>
+                <span style={{ fontSize: '11px', opacity: 0.8, color: '#fff' }}>admin / atsc2026</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUsernameInput('puerta')
+                  setPasswordInput('puerta2026')
+                }}
+                style={{
+                  background: 'rgba(56, 189, 248, 0.08)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  color: '#38bdf8',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <span>🚪 <strong>Control en Puerta</strong> (Solo Escáner)</span>
+                <span style={{ fontSize: '11px', opacity: 0.8, color: '#fff' }}>puerta / puerta2026</span>
+              </button>
+            </div>
+            <p style={{ fontSize: '11px', color: '#64748b', textAlign: 'center', marginTop: '10px', marginBottom: 0 }}>
+              💡 Tocá un perfil para rellenar usuario y contraseña al instante.
+            </p>
+          </div>
 
           {onBack && (
             <button type="button" className="admin-back-btn" onClick={onBack}>
@@ -1455,18 +1598,25 @@ export default function AdminPage({
         </div>
 
         <div className="dash-top-actions">
-          {userEmail && (
-            <span style={{ fontSize: '12px', color: '#8a9ab5', padding: '6px 10px', background: 'rgba(255,255,255,0.05)', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.1)' }}>
-              👤 {userEmail}
+          {userRole === 'superuser' ? (
+            <span style={{ fontSize: '12px', color: '#fbbf24', padding: '6px 12px', background: 'rgba(251, 191, 36, 0.1)', borderRadius: '6px', border: '1px solid rgba(251, 191, 36, 0.3)', fontWeight: 700 }}>
+              👑 Super Usuario {userEmail ? `(${userEmail})` : '(Acceso Total)'}
+            </span>
+          ) : (
+            <span style={{ fontSize: '12px', color: '#38bdf8', padding: '6px 12px', background: 'rgba(56, 189, 248, 0.1)', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.3)', fontWeight: 700 }}>
+              🚪 Control en Puerta {userEmail ? `(${userEmail})` : '(Solo Escáner)'}
             </span>
           )}
-          <button
-            className="btn-dash-primary"
-            onClick={() => setActiveTab('presencial')}
-            title="Anotar y emitir entrada en el instante a quien compre presencialmente"
-          >
-            <UserPlus size={15} /> + Venta Presencial
-          </button>
+          {userRole === 'superuser' && (
+            <button
+              className="btn-dash-primary"
+              onClick={() => setActiveTab('presencial')}
+              title="Configurar entradas vendidas del talonario físico para el sorteo"
+              style={{ background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color: '#070e1a', fontWeight: 700 }}
+            >
+              <Ticket size={15} /> Talonario Físico ({physicalConfig.soldCount})
+            </button>
+          )}
           {onBack && (
             <button className="btn-dash-outline" onClick={onBack}>
               <ArrowLeft size={14} /> Ir a la Web
@@ -1493,11 +1643,13 @@ export default function AdminPage({
           <strong>{totalCheckedIn} / {totalTicketsIssued}</strong>
           <small>{totalTicketsIssued > 0 ? Math.round((totalCheckedIn / totalTicketsIssued) * 100) : 0}% de asistencia</small>
         </article>
-        <article className="stat-card">
-          <span>RECAUDACIÓN PAGADA</span>
-          <strong className="text-green">{money(totalRevenue)}</strong>
-          <small>{pendingOrders} transferencias pendientes</small>
-        </article>
+        {userRole === 'superuser' && (
+          <article className="stat-card">
+            <span>RECAUDACIÓN PAGADA</span>
+            <strong className="text-green">{money(totalRevenue)}</strong>
+            <small>{pendingOrders} transferencias pendientes</small>
+          </article>
+        )}
         <article className="stat-card">
           <span>FALTANTES POR INGRESAR</span>
           <strong>{Math.max(0, totalTicketsIssued - totalCheckedIn)}</strong>
@@ -1506,37 +1658,47 @@ export default function AdminPage({
       </section>
 
       {/* Tabs Principales */}
-      <div className="dash-tabs">
+      <div className="dash-tabs no-print">
         <button
           className={activeTab === 'scanner' ? 'active tab-scanner-highlight' : ''}
           onClick={() => setActiveTab('scanner')}
         >
           <Camera size={18} /> Escáner de Cámara QR
         </button>
-        <button
-          className={activeTab === 'presencial' ? 'active tab-presencial-highlight' : ''}
-          onClick={() => setActiveTab('presencial')}
-        >
-          <UserPlus size={18} /> Venta Presencial (Puerta)
-        </button>
-        <button
-          className={activeTab === 'sorteo' ? 'active tab-sorteo-highlight' : ''}
-          onClick={() => setActiveTab('sorteo')}
-        >
-          <Gift size={18} /> Sorteo de Entradas
-        </button>
-        <button
-          className={activeTab === 'tickets' ? 'active' : ''}
-          onClick={() => setActiveTab('tickets')}
-        >
-          <Ticket size={18} /> Listado de Entradas ({tickets.length})
-        </button>
-        <button
-          className={activeTab === 'orders' ? 'active' : ''}
-          onClick={() => setActiveTab('orders')}
-        >
-          <Users size={18} /> Pedidos y Compradores ({orders.length})
-        </button>
+        {userRole === 'superuser' && (
+          <>
+            <button
+              className={activeTab === 'presencial' ? 'active tab-presencial-highlight' : ''}
+              onClick={() => setActiveTab('presencial')}
+            >
+              <Ticket size={18} /> 🎟️ Talonario Físico ({physicalConfig.soldCount})
+            </button>
+            <button
+              className={activeTab === 'sorteo' ? 'active tab-sorteo-highlight' : ''}
+              onClick={() => setActiveTab('sorteo')}
+            >
+              <Gift size={18} /> Sorteo de Entradas
+            </button>
+            <button
+              className={activeTab === 'padron' ? 'active tab-padron-highlight' : ''}
+              onClick={() => setActiveTab('padron')}
+            >
+              <FileText size={18} /> 📋 Padrón y Conteo
+            </button>
+            <button
+              className={activeTab === 'tickets' ? 'active' : ''}
+              onClick={() => setActiveTab('tickets')}
+            >
+              <Ticket size={18} /> Listado de Entradas ({tickets.length})
+            </button>
+            <button
+              className={activeTab === 'orders' ? 'active' : ''}
+              onClick={() => setActiveTab('orders')}
+            >
+              <Users size={18} /> Pedidos y Compradores ({orders.length})
+            </button>
+          </>
+        )}
       </div>
 
       {/* ══════════════════════════════════════════════════════════════
@@ -1703,362 +1865,181 @@ export default function AdminPage({
       {/* ══════════════════════════════════════════════════════════════
           TAB: VENTA PRESENCIAL DE ENTRADAS EN PUERTA
          ══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'presencial' && (
+      {userRole === 'superuser' && activeTab === 'presencial' && (
         <section className="presencial-section animate-fade">
-          <div className="presencial-container">
-            {presencialSuccessData ? (
-              /* Tarjeta de Confirmación de Venta Presencial */
-              <div className="presencial-success-card animate-fade">
-                <div className="pres-success-header">
-                  <div className="pres-success-icon-wrap">
-                    <CheckCircle2 size={44} color="#00d2b4" />
-                  </div>
-                  <div>
-                    <span className="pres-success-pill">VENTA REGISTRADA CON ÉXITO</span>
-                    <h2>¡Entradas Emitidas #{presencialSuccessData.orderId}!</h2>
-                    <p>Comprador: <b>{presencialSuccessData.buyer.fullName}</b> (DNI: {presencialSuccessData.buyer.dni})</p>
-                  </div>
+          <div className="presencial-container" style={{ maxWidth: '960px', margin: '0 auto', padding: '0 16px' }}>
+            <div style={{ background: '#0b1626', border: '1px solid #1c3252', borderRadius: '14px', padding: '28px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
+              {/* Encabezado */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #1c3252', paddingBottom: '18px', marginBottom: '22px', flexWrap: 'wrap', gap: '14px' }}>
+                <div>
+                  <span style={{ fontSize: '11px', fontWeight: 800, letterSpacing: '1px', color: '#fbbf24', textTransform: 'uppercase', background: 'rgba(251, 191, 36, 0.12)', padding: '3px 10px', borderRadius: '20px', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                    SORTEO ATSC · TALONARIO FÍSICO
+                  </span>
+                  <h2 style={{ fontFamily: 'Oswald, sans-serif', fontSize: '26px', color: '#fff', margin: '8px 0 4px', letterSpacing: '0.5px' }}>
+                    🎟️ Rango de Entradas Físicas (Venta Presencial)
+                  </h2>
+                  <p style={{ color: '#8a9ab5', fontSize: '13px', margin: 0, lineHeight: 1.4 }}>
+                    Definí el rango del talonario impreso (ej: 1000 al 1100) y marcá cuántas vendiste. Esos números entran automáticamente al bombo de la ruleta.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="btn-dash-primary"
+                  style={{ background: 'linear-gradient(135deg, #fbbf24 0%, #d97706 100%)', color: '#070e1a', fontWeight: 800, padding: '10px 18px' }}
+                  onClick={() => setActiveTab('sorteo')}
+                >
+                  <Gift size={16} /> Ir a la Ruleta del Sorteo
+                </button>
+              </div>
+
+              {/* Tarjetas de Rango y Cantidad Vendida */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '16px', marginBottom: '20px' }}>
+                <div style={{ background: '#070f1a', border: '1px solid #182d49', borderRadius: '10px', padding: '16px' }}>
+                  <label style={{ fontSize: '12px', color: '#8a9ab5', fontWeight: 700, textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                    1. Número Inicial del Talonario
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    className="attendee-text-input"
+                    style={{ width: '100%', fontSize: '18px', fontWeight: 700, fontFamily: 'monospace' }}
+                    value={physicalConfig.startNumber}
+                    onChange={e => handleUpdateStartNumber(parseInt(e.target.value, 10))}
+                  />
+                  <small style={{ color: '#627d98', fontSize: '11px', display: 'block', marginTop: '6px' }}>
+                    Primer número de tu talonario físico (ej: 1000)
+                  </small>
                 </div>
 
-                <div className="pres-email-status-banner">
-                  {presencialSuccessData.emailSuccess ? (
-                    <div className="status-email-ok">
-                      <Check size={18} />
-                      <span>Se despachó el correo electrónico con los códigos QR a <b>{presencialSuccessData.buyer.email}</b>.</span>
-                    </div>
-                  ) : (
-                    <div className="status-email-warn">
-                      <AlertTriangle size={18} />
-                      <span>Nota de correo: {presencialSuccessData.emailMessage || 'No se pudo enviar el correo vía SMTP. Verificá credenciales.'} (Podés mostrar los códigos QR abajo para que ingresen ya mismo).</span>
-                    </div>
-                  )}
-                  {presencialSuccessData.checkedInImmediate && (
-                    <div className="status-checkin-ok">
-                      <Check size={18} />
-                      <span><b>Ingreso registrado en puerta:</b> Las {presencialSuccessData.quantity} entrada(s) ya fueron marcadas como INGRESADAS.</span>
-                    </div>
-                  )}
+                <div style={{ background: '#070f1a', border: '1px solid #182d49', borderRadius: '10px', padding: '16px' }}>
+                  <label style={{ fontSize: '12px', color: '#8a9ab5', fontWeight: 700, textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                    2. Número Final del Talonario
+                  </label>
+                  <input
+                    type="number"
+                    min={physicalConfig.startNumber}
+                    className="attendee-text-input"
+                    style={{ width: '100%', fontSize: '18px', fontWeight: 700, fontFamily: 'monospace' }}
+                    value={physicalConfig.endNumber}
+                    onChange={e => handleUpdateEndNumber(parseInt(e.target.value, 10))}
+                  />
+                  <small style={{ color: '#627d98', fontSize: '11px', display: 'block', marginTop: '6px' }}>
+                    Lote total: {physicalTotalLot} entradas impresas
+                  </small>
                 </div>
 
-                {/* Grilla con los QR emitidos */}
-                <div className="pres-issued-qr-grid">
-                  {presencialSuccessData.tickets.map((t, idx) => (
-                    <div key={idx} className="pres-qr-card">
-                      <div className="pres-qr-top">
-                        {t.isPlayer ? (
-                          <span className="badge-player-pill">⚽ JUGADOR (Sin sorteo)</span>
-                        ) : (
-                          <span className="badge-raffle-pill">🎟️ SORTEO N° {t.ticketNumber}</span>
-                        )}
-                        <span className="pres-club-tag">ATSC 2026</span>
-                      </div>
-                      <strong className="pres-qr-name">{t.attendeeName}</strong>
-                      {presencialSuccessData.qrDataUrls[t.qrToken] && (
-                        <div className="pres-qr-img-wrap">
-                          <img
-                            src={presencialSuccessData.qrDataUrls[t.qrToken]}
-                            alt={`QR Entrada ${t.ticketNumber}`}
-                            width={190}
-                            height={190}
-                          />
-                        </div>
-                      )}
-                      <small className="pres-qr-token">{t.qrToken.slice(0, 18)}...</small>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="pres-actions-row">
-                  <button
-                    type="button"
-                    className="btn-dash-primary btn-big"
-                    onClick={handleResetPresencialForm}
-                  >
-                    <Plus size={18} /> Nueva Venta Presencial
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-dash-outline btn-big"
-                    onClick={() => setActiveTab('tickets')}
-                  >
-                    <Ticket size={18} /> Ver en Listado de Entradas
-                  </button>
+                <div style={{ background: '#070f1a', border: '1px solid rgba(251, 191, 36, 0.45)', borderRadius: '10px', padding: '16px', boxShadow: '0 0 16px rgba(251, 191, 36, 0.1)' }}>
+                  <label style={{ fontSize: '12px', color: '#fbbf24', fontWeight: 800, textTransform: 'uppercase', display: 'block', marginBottom: '8px' }}>
+                    3. Cantidad Vendida (Participan)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={physicalTotalLot}
+                    className="attendee-text-input"
+                    style={{ width: '100%', fontSize: '22px', fontWeight: 800, color: '#fbbf24', fontFamily: 'monospace' }}
+                    value={physicalConfig.soldCount}
+                    onChange={e => handleUpdateSoldCount(parseInt(e.target.value, 10))}
+                  />
+                  <small style={{ color: '#8a9ab5', fontSize: '11px', display: 'block', marginTop: '6px' }}>
+                    {physicalConfig.soldCount > 0
+                      ? `🎯 Participan del #${physicalConfig.startNumber} al #${physicalConfig.startNumber + physicalConfig.soldCount - 1}`
+                      : '0 vendidas (ninguna participa aún)'}
+                  </small>
                 </div>
               </div>
-            ) : (
-              /* Formulario de Venta Presencial */
-              <div className="presencial-form-card">
-                <div className="pres-card-header">
-                  <div className="pres-card-icon"><UserPlus size={24} /></div>
-                  <div>
-                    <h2>Venta y Emisión Presencial de Entradas</h2>
-                    <p>Anotá en el momento a los asistentes en puerta y enviales automáticamente sus códigos QR por correo electrónico.</p>
+
+              {/* Botones de Ajuste Rápido */}
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '22px', background: '#070e19', padding: '12px 16px', borderRadius: '8px', border: '1px solid #142742' }}>
+                <span style={{ fontSize: '12px', color: '#8a9ab5', fontWeight: 600, marginRight: '4px' }}>Ajuste rápido:</span>
+                <button type="button" className="btn-dash-outline" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={() => handleAdjustSoldCount(-10)}>-10</button>
+                <button type="button" className="btn-dash-outline" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={() => handleAdjustSoldCount(-5)}>-5</button>
+                <button type="button" className="btn-dash-outline" style={{ padding: '5px 10px', fontSize: '12px' }} onClick={() => handleAdjustSoldCount(-1)}>-1</button>
+                <button type="button" className="btn-dash-outline" style={{ padding: '5px 12px', fontSize: '12px', color: '#00d2b4', borderColor: '#00d2b4' }} onClick={() => handleAdjustSoldCount(1)}>+1</button>
+                <button type="button" className="btn-dash-outline" style={{ padding: '5px 12px', fontSize: '12px', color: '#00d2b4', borderColor: '#00d2b4' }} onClick={() => handleAdjustSoldCount(5)}>+5</button>
+                <button type="button" className="btn-dash-outline" style={{ padding: '5px 12px', fontSize: '12px', color: '#00d2b4', borderColor: '#00d2b4' }} onClick={() => handleAdjustSoldCount(10)}>+10</button>
+                <button type="button" className="btn-dash-outline" style={{ padding: '5px 14px', fontSize: '12px', color: '#fbbf24', borderColor: '#fbbf24' }} onClick={handleSetAllSold}>Marcar todo el talonario</button>
+                <button type="button" className="btn-dash-outline" style={{ padding: '5px 10px', fontSize: '12px', color: '#ef4444', borderColor: '#ef4444', marginLeft: 'auto' }} onClick={() => handleUpdateSoldCount(0)}>Poner en 0</button>
+              </div>
+
+              {/* Estadísticas de Composición del Sorteo */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '22px' }}>
+                <div style={{ background: 'rgba(251, 191, 36, 0.08)', border: '1px solid rgba(251, 191, 36, 0.25)', borderRadius: '8px', padding: '14px 16px' }}>
+                  <span style={{ fontSize: '11px', color: '#fbbf24', fontWeight: 700, display: 'block' }}>FÍSICAS EN EL SORTEO</span>
+                  <strong style={{ fontSize: '26px', color: '#fff', fontFamily: 'Oswald, sans-serif' }}>{physicalConfig.soldCount}</strong>
+                  <span style={{ fontSize: '11px', color: '#8a9ab5', display: 'block', marginTop: '2px' }}>
+                    {physicalConfig.soldCount > 0 ? `#${physicalConfig.startNumber} al #${physicalConfig.startNumber + physicalConfig.soldCount - 1}` : 'Sin ventas'}
+                  </span>
+                </div>
+                <div style={{ background: 'rgba(0, 210, 180, 0.08)', border: '1px solid rgba(0, 210, 180, 0.25)', borderRadius: '8px', padding: '14px 16px' }}>
+                  <span style={{ fontSize: '11px', color: '#00d2b4', fontWeight: 700, display: 'block' }}>ONLINE EN EL SORTEO</span>
+                  <strong style={{ fontSize: '26px', color: '#fff', fontFamily: 'Oswald, sans-serif' }}>{tickets.filter(t => !isPlayerTicket(t) && t.status !== 'cancelled').length}</strong>
+                  <span style={{ fontSize: '11px', color: '#8a9ab5', display: 'block', marginTop: '2px' }}>Acompañantes web</span>
+                </div>
+                <div style={{ background: 'rgba(217, 39, 54, 0.12)', border: '1px solid rgba(217, 39, 54, 0.35)', borderRadius: '8px', padding: '14px 16px' }}>
+                  <span style={{ fontSize: '11px', color: '#ff6b77', fontWeight: 700, display: 'block' }}>TOTAL EN EL BOMBO</span>
+                  <strong style={{ fontSize: '26px', color: '#fff', fontFamily: 'Oswald, sans-serif' }}>{raffleParticipants.length}</strong>
+                  <span style={{ fontSize: '11px', color: '#8a9ab5', display: 'block', marginTop: '2px' }}>Números listos para girar</span>
+                </div>
+                <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '8px', padding: '14px 16px' }}>
+                  <span style={{ fontSize: '11px', color: '#10b981', fontWeight: 700, display: 'block' }}>RECAUDACIÓN EN MANO</span>
+                  <strong style={{ fontSize: '26px', color: '#fff', fontFamily: 'Oswald, sans-serif' }}>{money(physicalConfig.soldCount * unitPrice)}</strong>
+                  <span style={{ fontSize: '11px', color: '#8a9ab5', display: 'block', marginTop: '2px' }}>{money(unitPrice)} por entrada</span>
+                </div>
+              </div>
+
+              {/* Visualizador de Números del Talonario */}
+              <div style={{ background: '#070e19', border: '1px solid #142742', borderRadius: '10px', padding: '18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>
+                    Visualizador de Boletos ({physicalTotalLot} números en el rango):
+                  </span>
+                  <div style={{ display: 'flex', gap: '14px', fontSize: '11px' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#fbbf24' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#fbbf24', display: 'inline-block' }}></span>
+                      Vendido (En el sorteo)
+                    </span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#627d98' }}>
+                      <span style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#1c3252', display: 'inline-block' }}></span>
+                      Sin vender
+                    </span>
                   </div>
                 </div>
 
-                <form onSubmit={handleRegisterPresencialSale} className="pres-form">
-                  {/* Datos del Comprador */}
-                  <div className="pres-section-block">
-                    <h3>1. Datos de Contacto del Comprador</h3>
-                    <div className="form-grid-modern">
-                      <div className="form-field full">
-                        <label>Nombre y Apellido Completo *</label>
-                        <input
-                          type="text"
-                          required
-                          placeholder="Ej: Laura Martínez"
-                          value={presencialBuyer.fullName}
-                          onChange={e => {
-                            const val = e.target.value
-                            setPresencialBuyer(b => ({ ...b, fullName: val }))
-                            if (presencialAttendees[0] && (!presencialAttendees[0].name || presencialAttendees[0].name === presencialBuyer.fullName)) {
-                              updatePresencialAttendee(0, { name: val })
-                            }
-                          }}
-                        />
-                      </div>
+                <p style={{ fontSize: '11px', color: '#8a9ab5', margin: '0 0 14px' }}>
+                  💡 <em>Podés hacer clic sobre cualquier número para marcar como vendidos todos los números hasta ese boleto inclusive.</em>
+                </p>
 
-                      <div className="form-field">
-                        <label>DNI del Comprador *</label>
-                        <input
-                          type="text"
-                          required
-                          inputMode="numeric"
-                          placeholder="Sin puntos ni espacios"
-                          value={presencialBuyer.dni}
-                          onChange={e => setPresencialBuyer(b => ({ ...b, dni: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
-                        />
-                      </div>
-
-                      <div className="form-field">
-                        <label>Teléfono Celular / WhatsApp</label>
-                        <input
-                          type="tel"
-                          placeholder="+54 9 261 ..."
-                          value={presencialBuyer.phone}
-                          onChange={e => setPresencialBuyer(b => ({ ...b, phone: e.target.value }))}
-                        />
-                      </div>
-
-                      <div className="form-field full">
-                        <label>
-                          Correo Electrónico para enviar los códigos QR *
-                          <span className="highlight-tag">Se le despachará el mail con los QR al instante</span>
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          placeholder="comprador@gmail.com"
-                          value={presencialBuyer.email}
-                          onChange={e => setPresencialBuyer(b => ({ ...b, email: e.target.value }))}
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Cantidad de entradas */}
-                  <div className="pres-section-block">
-                    <div className="pres-qty-header-row">
-                      <div>
-                        <h3>2. Cantidad de Entradas</h3>
-                        <p style={{ color: '#8a9ab5', fontSize: '13px', margin: 0 }}>Indicá cuántas personas ingresan con esta compra</p>
-                      </div>
-                      <div className="stepper-modern">
-                        <button
-                          type="button"
-                          onClick={() => setPresencialQty(q => Math.max(1, q - 1))}
-                          disabled={presencialQty <= 1}
-                        >
-                          <Minus size={18} />
-                        </button>
-                        <span className="stepper-val">{presencialQty}</span>
-                        <button
-                          type="button"
-                          onClick={() => setPresencialQty(q => Math.min(10, q + 1))}
-                          disabled={presencialQty >= 10}
-                        >
-                          <Plus size={18} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Lista de selección de roles y categorías para cada entrada */}
-                    <div className="pres-attendees-list">
-                      {Array.from({ length: presencialQty }).map((_, idx) => {
-                        const att = presencialAttendees[idx] || {
-                          name: '',
-                          role: 'jugador' as AttendeeRole,
-                          category: 'Primera' as Category,
-                        }
-
-                        return (
-                          <div key={idx} className="pres-attendee-item-card">
-                            <div className="pres-item-header">
-                              <span className="attendee-tag-badge">Entrada #{idx + 1}</span>
-                              <span className={`attendee-type-indicator ${att.role === 'jugador' ? 'indicator-jugador' : 'indicator-acompanante'}`}>
-                                {att.role === 'jugador' ? '⚽ Jugador · $0 (Sin sorteo)' : `🎟️ Acompañante · ${money(unitPrice)} (Con sorteo)`}
-                              </span>
-                            </div>
-
-                            <div className="pres-item-fields-grid">
-                              {/* 1. Rol */}
-                              <div className="pres-field-col">
-                                <label><b>1. Tipo de Asistente *</b></label>
-                                <div className="role-selector-grid">
-                                  <button
-                                    type="button"
-                                    className={`role-option-btn ${att.role === 'jugador' ? 'selected role-jugador' : ''}`}
-                                    onClick={() => updatePresencialAttendee(idx, { role: 'jugador' })}
-                                  >
-                                    <span className="role-opt-emoji">⚽</span>
-                                    <div className="role-opt-text">
-                                      <strong>Jugador</strong>
-                                      <small>Sin costo · Sin sorteo</small>
-                                    </div>
-                                    {att.role === 'jugador' && <Check size={14} className="role-check" />}
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    className={`role-option-btn ${att.role === 'acompanante' ? 'selected role-acompanante' : ''}`}
-                                    onClick={() => updatePresencialAttendee(idx, { role: 'acompanante' })}
-                                  >
-                                    <span className="role-opt-emoji">🎟️</span>
-                                    <div className="role-opt-text">
-                                      <strong>Acompañante</strong>
-                                      <small>{money(unitPrice)} · Con sorteo</small>
-                                    </div>
-                                    {att.role === 'acompanante' && <Check size={14} className="role-check" />}
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* 2. Categoría */}
-                              <div className="pres-field-col">
-                                <label><b>2. Categoría *</b></label>
-                                <select
-                                  className="category-select-input"
-                                  value={att.category}
-                                  onChange={e => updatePresencialAttendee(idx, { category: e.target.value as Category })}
-                                  required
-                                >
-                                  {CATEGORIES.map(cat => (
-                                    <option key={cat} value={cat}>
-                                      Categoría {cat}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-
-                              {/* 3. Nombre */}
-                              <div className="pres-field-col">
-                                <label><b>3. Nombre del Asistente *</b></label>
-                                <input
-                                  type="text"
-                                  className="attendee-text-input"
-                                  required
-                                  placeholder={idx === 0 ? (presencialBuyer.fullName || 'Nombre y Apellido') : `Nombre Asistente Entrada #${idx + 1}`}
-                                  value={att.name}
-                                  onChange={e => updatePresencialAttendee(idx, { name: e.target.value })}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Método de Cobro y Check-in */}
-                  <div className="pres-section-block">
-                    <h3>3. Forma de Pago y Acceso</h3>
-                    <div className="pres-payment-method-row">
-                      <label className="pres-label">Medio de cobro recibido:</label>
-                      <div className="payment-method-pills">
-                        <button
-                          type="button"
-                          className={`method-pill ${presencialPaymentMethod === 'efectivo' ? 'selected' : ''}`}
-                          onClick={() => setPresencialPaymentMethod('efectivo')}
-                        >
-                          💵 Efectivo en Puerta
-                        </button>
-                        <button
-                          type="button"
-                          className={`method-pill ${presencialPaymentMethod === 'transferencia' ? 'selected' : ''}`}
-                          onClick={() => setPresencialPaymentMethod('transferencia')}
-                        >
-                          📲 Transferencia Bancaria
-                        </button>
-                        <button
-                          type="button"
-                          className={`method-pill ${presencialPaymentMethod === 'otro' ? 'selected' : ''}`}
-                          onClick={() => setPresencialPaymentMethod('otro')}
-                        >
-                          🎁 Especial / Bonificado
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="pres-checkin-option">
-                      <label className="checkbox-custom-label">
-                        <input
-                          type="checkbox"
-                          checked={presencialCheckInImmediate}
-                          onChange={e => setPresencialCheckInImmediate(e.target.checked)}
-                        />
-                        <span>
-                          <b>Check-in automático en puerta:</b> Marcar inmediatamente como ingresado (el asistente entra al evento ahora mismo sin tener que escanearlo después).
-                        </span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Resumen de cobro */}
-                  <div className="pres-summary-box">
-                    <div className="summary-breakdown-row">
-                      <span>⚽ Entradas Jugadores ({presencialPlayerCount}):</span>
-                      <strong className="text-green">¡GRATIS! ($0)</strong>
-                    </div>
-                    <div className="summary-breakdown-row">
-                      <span>🎟️ Entradas Acompañantes ({presencialCompanionCount}):</span>
-                      <strong>{money(presencialCompanionCount * unitPrice)}</strong>
-                    </div>
-                    <div className="summary-divider-line" />
-                    <div className="summary-total-calc-row">
-                      <span>TOTAL COBRADO EN PUERTA:</span>
-                      <strong className="total-amount-highlight">{money(presencialTotal)}</strong>
-                    </div>
-                  </div>
-
-                  {presencialError && (
-                    <div className="error-banner" style={{ marginTop: '16px' }}>
-                      <AlertTriangle size={18} />
-                      <span>{presencialError}</span>
-                    </div>
-                  )}
-
-                  <div className="pres-form-actions">
-                    <button
-                      type="submit"
-                      className="btn-huge-red full-width"
-                      disabled={presencialSubmitting}
-                    >
-                      {presencialSubmitting ? (
-                        <>
-                          <RefreshCw size={18} className="spinner" />
-                          <span>REGISTRANDO VENTA Y ENVIANDO MAIL CON QR...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Send size={18} />
-                          <span>REGISTRAR VENTA Y ENVIAR QR AL CORREO</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                </form>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(68px, 1fr))', gap: '6px', maxHeight: '280px', overflowY: 'auto', paddingRight: '6px' }}>
+                  {Array.from({ length: Math.min(300, physicalTotalLot) }, (_, idx) => {
+                    const num = physicalConfig.startNumber + idx;
+                    const isSold = idx < physicalConfig.soldCount;
+                    return (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() => handleUpdateSoldCount(idx + 1)}
+                        title={isSold ? `N° ${num} Vendido (Participa del sorteo). Clic para ajustar hasta aquí.` : `N° ${num} No vendido. Clic para marcar hasta aquí.`}
+                        style={{
+                          background: isSold ? 'rgba(251, 191, 36, 0.15)' : '#070f1a',
+                          border: isSold ? '1px solid #fbbf24' : '1px solid #182d49',
+                          color: isSold ? '#fbbf24' : '#627d98',
+                          borderRadius: '5px',
+                          padding: '6px 2px',
+                          fontSize: '12px',
+                          fontFamily: 'monospace',
+                          fontWeight: isSold ? 'bold' : 'normal',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {num}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            )}
+            </div>
           </div>
         </section>
       )}
@@ -2066,7 +2047,7 @@ export default function AdminPage({
       {/* ══════════════════════════════════════════════════════════════
           TAB 2: LISTADO DE ENTRADAS & CHECK-IN MANUAL
          ══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'tickets' && (
+      {userRole === 'superuser' && activeTab === 'tickets' && (
         <section className="table-section animate-fade">
           <div className="table-controls-bar">
             <div className="search-box">
@@ -2125,7 +2106,11 @@ export default function AdminPage({
                 {filteredTickets.map(ticket => (
                   <tr key={ticket.id}>
                     <td>
-                      {isPlayerTicket(ticket) ? (
+                      {/menor/i.test(ticket.attendee_name || '') ? (
+                        <span className="ticket-badge-player" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', borderColor: 'rgba(56, 189, 248, 0.3)' }}>
+                          👶 Menor &lt;3 años ($0)
+                        </span>
+                      ) : isPlayerTicket(ticket) ? (
                         <span className="ticket-badge-player">
                           ⚽ Jugador (Sin sorteo)
                         </span>
@@ -2184,7 +2169,7 @@ export default function AdminPage({
       {/* ══════════════════════════════════════════════════════════════
           TAB 3: GESTIÓN DE PEDIDOS Y PAGOS
          ══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'orders' && (
+      {userRole === 'superuser' && activeTab === 'orders' && (
         <section className="table-section animate-fade">
           <div className="table-controls-bar">
             <div className="search-box">
@@ -2327,7 +2312,7 @@ export default function AdminPage({
       {/* ══════════════════════════════════════════════════════════════
           TAB 5: SORTEO DE ENTRADAS (NÚMERO AL AZAR)
          ══════════════════════════════════════════════════════════════ */}
-      {activeTab === 'sorteo' && (
+      {userRole === 'superuser' && activeTab === 'sorteo' && (
         <section className="sorteo-section animate-fade">
           <div className="sorteo-hero-card">
             <div className="sorteo-badge-pill">
@@ -2377,6 +2362,29 @@ export default function AdminPage({
               >
                 {soundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
                 {soundEnabled ? 'Sonido ON' : 'Silencio'}
+              </button>
+            </div>
+
+            {/* Resumen rápido de origen de entradas en sorteo */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(6, 13, 23, 0.75)', border: '1px solid #142742', borderRadius: '8px', padding: '10px 16px', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', fontSize: '13px', flexWrap: 'wrap' }}>
+                <span style={{ color: '#8a9ab5' }}>
+                  🌐 Web Online: <strong style={{ color: '#00d2b4' }}>{tickets.filter(t => !isPlayerTicket(t) && t.status !== 'cancelled').length}</strong>
+                </span>
+                <span style={{ color: '#8a9ab5' }}>
+                  🎟️ Talonario Físico: <strong style={{ color: '#fbbf24' }}>{physicalConfig.soldCount}</strong> {physicalConfig.soldCount > 0 && <small style={{ color: '#627d98' }}>(#{physicalConfig.startNumber}-#{physicalConfig.startNumber + physicalConfig.soldCount - 1})</small>}
+                </span>
+                <span style={{ color: '#ffffff' }}>
+                  🎰 Total Habilitadas: <strong style={{ color: '#ff6b77', fontSize: '15px' }}>{eligibleParticipants.length}</strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn-dash-outline"
+                style={{ padding: '4px 10px', fontSize: '11px', color: '#fbbf24', borderColor: 'rgba(251, 191, 36, 0.4)' }}
+                onClick={() => setActiveTab('presencial')}
+              >
+                ⚙️ Ajustar Talonario Físico
               </button>
             </div>
 
@@ -2448,7 +2456,7 @@ export default function AdminPage({
             <div className="sorteo-pool-count">
               {eligibleParticipants.length > 0 ? (
                 <>
-                  Participan <strong>{eligibleParticipants.length}</strong> entradas de acompañantes en este sorteo
+                  Participan <strong>{eligibleParticipants.length}</strong> entradas en este sorteo
                   {raffleFilter === 'checked_in_only' ? ' (solo quienes ya ingresaron al evento)' : ' (todas las vendidas)'}.
                 </>
               ) : (
@@ -2479,43 +2487,69 @@ export default function AdminPage({
               )}
 
               <div className="winner-details-grid">
-                <div className="winner-detail-col">
-                  <label>Asistente Ganador</label>
-                  <strong>{currentWinner.ticket.attendee_name}</strong>
-                  <span>Entrada N° {currentWinner.ticketNumber} (Acompañante)</span>
-                </div>
+                {currentWinner.isPhysical ? (
+                  <>
+                    <div className="winner-detail-col">
+                      <label>Tipo de Entrada</label>
+                      <strong style={{ color: '#fbbf24', fontSize: '16px' }}>🎟️ Boleto Físico (Talonario)</strong>
+                      <span>Número en mano: <b>N° {currentWinner.ticketNumber}</b></span>
+                    </div>
 
-                <div className="winner-detail-col">
-                  <label>Presencia en Puerta</label>
-                  {currentWinner.isCheckedIn ? (
-                    <div className="winner-attendance-status winner-att-present">
-                      <CheckCircle2 size={14} /> PRESENTE EN EL SALÓN
-                      {currentWinner.ticket.checked_in_at && (
-                        <span> · Ingreso {new Date(currentWinner.ticket.checked_in_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs</span>
+                    <div className="winner-detail-col">
+                      <label>Presencia en el Salón</label>
+                      <div className="winner-attendance-status winner-att-present">
+                        <CheckCircle2 size={14} /> VENTA EN MANO (PRESENTE)
+                      </div>
+                    </div>
+
+                    <div className="winner-detail-col" style={{ gridColumn: 'span 2' }}>
+                      <label>Instrucciones de Entrega</label>
+                      <div style={{ background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.35)', borderRadius: '6px', padding: '10px 14px', color: '#fef3c7', fontSize: '13px' }}>
+                        🎫 <strong>¡Atención en el salón!</strong> El ganador debe exhibir su entrada física con el <strong>N° {currentWinner.ticketNumber}</strong> para reclamar el premio.
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="winner-detail-col">
+                      <label>Asistente Ganador</label>
+                      <strong>{currentWinner.ticket.attendee_name}</strong>
+                      <span>Entrada N° {currentWinner.ticketNumber} (Acompañante)</span>
+                    </div>
+
+                    <div className="winner-detail-col">
+                      <label>Presencia en Puerta</label>
+                      {currentWinner.isCheckedIn ? (
+                        <div className="winner-attendance-status winner-att-present">
+                          <CheckCircle2 size={14} /> PRESENTE EN EL SALÓN
+                          {currentWinner.ticket.checked_in_at && (
+                            <span> · Ingreso {new Date(currentWinner.ticket.checked_in_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs</span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="winner-attendance-status winner-att-absent">
+                          <AlertTriangle size={14} /> NO REGISTRÓ INGRESO AÚN
+                        </div>
                       )}
                     </div>
-                  ) : (
-                    <div className="winner-attendance-status winner-att-absent">
-                      <AlertTriangle size={14} /> NO REGISTRÓ INGRESO AÚN
+
+                    <div className="winner-detail-col">
+                      <label>Comprador / Titular</label>
+                      <strong>{currentWinner.order?.buyer_full_name || 'Venta directa'}</strong>
+                      <span>DNI: {currentWinner.order?.buyer_dni || '—'} · Pedido #{currentWinner.ticket.order_id?.slice(0, 6).toUpperCase()}</span>
                     </div>
-                  )}
-                </div>
 
-                <div className="winner-detail-col">
-                  <label>Comprador / Titular</label>
-                  <strong>{currentWinner.order?.buyer_full_name || 'Venta directa'}</strong>
-                  <span>DNI: {currentWinner.order?.buyer_dni || '—'} · Pedido #{currentWinner.ticket.order_id?.slice(0, 6).toUpperCase()}</span>
-                </div>
-
-                <div className="winner-detail-col">
-                  <label>Teléfono de Contacto</label>
-                  <strong>{currentWinner.order?.buyer_phone || 'Sin teléfono'}</strong>
-                  <span>{currentWinner.order?.buyer_email || '—'}</span>
-                </div>
+                    <div className="winner-detail-col">
+                      <label>Teléfono de Contacto</label>
+                      <strong>{currentWinner.order?.buyer_phone || 'Sin teléfono'}</strong>
+                      <span>{currentWinner.order?.buyer_email || '—'}</span>
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className="winner-actions-bar">
-                {currentWinner.order?.buyer_phone && (
+                {!currentWinner.isPhysical && currentWinner.order?.buyer_phone && (
                   <a
                     href={`https://wa.me/${currentWinner.order.buyer_phone.replace(/\D/g, '')}?text=${encodeURIComponent(`¡Hola ${currentWinner.order.buyer_full_name}! Te avisamos que tu entrada N° ${currentWinner.ticketNumber} (${currentWinner.ticket.attendee_name}) acaba de salir ganadora en el sorteo de la Cena Andes Talleres 2026! 🏆🎉`)}`}
                     target="_blank"
@@ -2530,7 +2564,9 @@ export default function AdminPage({
                   type="button"
                   className="btn-winner-copy"
                   onClick={() => {
-                    const text = `🏆 GANADOR DEL SORTEO ATSC\nN°: ${currentWinner.ticketNumber}\nAsistente: ${currentWinner.ticket.attendee_name}\nComprador: ${currentWinner.order?.buyer_full_name || '—'} (DNI: ${currentWinner.order?.buyer_dni || '—'})\nTeléfono: ${currentWinner.order?.buyer_phone || '—'}\nEstado: ${currentWinner.isCheckedIn ? 'Presente en el salón' : 'Sin ingreso registrado'}`
+                    const text = currentWinner.isPhysical
+                      ? `🏆 GANADOR DEL SORTEO ATSC\nN°: ${currentWinner.ticketNumber}\nTipo: Entrada Física / Talonario en mano\nEstado: Presentar talón físico N° ${currentWinner.ticketNumber} para retirar premio`
+                      : `🏆 GANADOR DEL SORTEO ATSC\nN°: ${currentWinner.ticketNumber}\nAsistente: ${currentWinner.ticket.attendee_name}\nComprador: ${currentWinner.order?.buyer_full_name || '—'} (DNI: ${currentWinner.order?.buyer_dni || '—'})\nTeléfono: ${currentWinner.order?.buyer_phone || '—'}\nEstado: ${currentWinner.isCheckedIn ? 'Presente en el salón' : 'Sin ingreso registrado'}`
                     navigator.clipboard.writeText(text)
                     setCopiedRecordId('current')
                     setTimeout(() => setCopiedRecordId(null), 2500)
@@ -2572,7 +2608,9 @@ export default function AdminPage({
                     className="btn-dash-outline"
                     onClick={() => {
                       const listText = winnersHistory.map((w, idx) =>
-                        `${idx + 1}. [N° ${w.participant.ticketNumber}] ${w.prizeName}: ${w.participant.ticket.attendee_name} (Comprador: ${w.participant.order?.buyer_full_name || '—'} - Tel: ${w.participant.order?.buyer_phone || '—'})`
+                        w.participant.isPhysical
+                          ? `${idx + 1}. [N° ${w.participant.ticketNumber}] ${w.prizeName}: Boleto Físico (Talonario en mano)`
+                          : `${idx + 1}. [N° ${w.participant.ticketNumber}] ${w.prizeName}: ${w.participant.ticket.attendee_name} (Comprador: ${w.participant.order?.buyer_full_name || '—'} - Tel: ${w.participant.order?.buyer_phone || '—'})`
                       ).join('\n')
                       navigator.clipboard.writeText(`🏆 GANADORES SORTEO CENA ANDES TALLERES:\n\n${listText}`)
                       setCopiedRecordId('all')
@@ -2631,10 +2669,19 @@ export default function AdminPage({
                         </td>
                         <td>
                           <strong>{rec.participant.ticket.attendee_name}</strong>
+                          {rec.participant.isPhysical && (
+                            <div style={{ color: '#fbbf24', fontSize: '11px', fontWeight: 600 }}>Talonario Físico</div>
+                          )}
                         </td>
                         <td>
-                          <div>{rec.participant.order?.buyer_full_name || '—'}</div>
-                          <small style={{ color: '#8496ad' }}>{rec.participant.order?.buyer_phone || ''}</small>
+                          {rec.participant.isPhysical ? (
+                            <span style={{ color: '#8a9ab5', fontSize: '12px' }}>Venta en mano</span>
+                          ) : (
+                            <>
+                              <div>{rec.participant.order?.buyer_full_name || '—'}</div>
+                              <small style={{ color: '#8496ad' }}>{rec.participant.order?.buyer_phone || ''}</small>
+                            </>
+                          )}
                         </td>
                         <td>
                           {rec.participant.isCheckedIn ? (
@@ -2724,8 +2771,8 @@ export default function AdminPage({
                         >
                           <div>
                             <span className="transparency-num">N° {p.ticketNumber}</span>
-                            <div style={{ color: '#cfd8e3', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }}>
-                              {p.ticket.attendee_name}
+                            <div style={{ color: p.isPhysical ? '#fbbf24' : '#cfd8e3', fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '130px' }}>
+                              {p.isPhysical ? '🎟️ Talonario Físico' : p.ticket.attendee_name}
                             </div>
                           </div>
                           <div>
@@ -2743,6 +2790,411 @@ export default function AdminPage({
                 </div>
               </div>
             )}
+          </div>
+        </section>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════
+          TAB: PADRÓN Y CONTEO POR CATEGORÍAS
+         ══════════════════════════════════════════════════════════════ */}
+      {userRole === 'superuser' && activeTab === 'padron' && (
+        <section className="padron-section animate-fade">
+          {/* Encabezado formal solo para impresión en PDF */}
+          <div className="padron-print-only">
+            <div className="padron-print-header">
+              <div>
+                <h1>ANDES TALLERES SPORT CLUB</h1>
+                <p><b>CENA DE FIN DE AÑO 2026</b> · MICROESTADIO ANDES TALLERES</p>
+                <p style={{ fontSize: '9pt', color: '#666' }}>Planilla Oficial de Conteo y Padrón de Asistentes clasificado por Categoría</p>
+              </div>
+              <div style={{ textAlign: 'right', fontSize: '9pt', color: '#555' }}>
+                <div>Fecha emisión: <b>{new Date().toLocaleDateString('es-AR')}</b></div>
+                <div>Hora: <b>{new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs</b></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Barra de título y botones de acción (en pantalla) */}
+          <div className="padron-header-bar no-print">
+            <div className="padron-header-titles">
+              <h2>📋 Padrón Oficial y Conteo por Categorías</h2>
+              <p>Desglose ordenado de Jugadores, Acompañantes y Menores &lt;3 años por división deportiva con opción de exportación a PDF para conteo.</p>
+            </div>
+
+            <div className="padron-actions-group">
+              <button
+                type="button"
+                className="btn-print-padron"
+                onClick={() => window.print()}
+                title="Generar o imprimir reporte en PDF listo para imprimir"
+              >
+                <Printer size={16} /> Imprimir / Guardar como PDF
+              </button>
+
+              <button
+                type="button"
+                className="btn-export-csv"
+                onClick={handleDownloadCsv}
+                title="Descargar lista completa en Excel / CSV"
+              >
+                <Download size={16} /> Descargar Excel / CSV
+              </button>
+
+              <button
+                type="button"
+                className="btn-copy-wa"
+                onClick={handleCopyPadronWhatsApp}
+                title="Copiar resumen para WhatsApp"
+              >
+                <Share2 size={16} /> Copiar para WhatsApp
+              </button>
+            </div>
+          </div>
+
+          {/* Kpis / Estadísticas Rápidas de Conteo */}
+          <div className="padron-stat-grid">
+            <div className="padron-stat-box" style={{ borderLeft: '4px solid #d92736' }}>
+              <span style={{ color: '#ff6874' }}>TOTAL ASISTENTES</span>
+              <strong>{padronTotals.totalAttendees}</strong>
+              <small>Convocatoria global del evento</small>
+            </div>
+
+            <div className="padron-stat-box" style={{ borderLeft: '4px solid #00d2b4' }}>
+              <span style={{ color: '#00d2b4' }}>⚽ JUGADORES DEL CLUB</span>
+              <strong>{padronTotals.totalPlayers}</strong>
+              <small>Entradas bonificadas ($0)</small>
+            </div>
+
+            <div className="padron-stat-box" style={{ borderLeft: '4px solid #fbbf24' }}>
+              <span style={{ color: '#fbbf24' }}>🎟️ ACOMPAÑANTES</span>
+              <strong>{padronTotals.totalCompanions}</strong>
+              <small>Entradas con sorteo ({money(padronTotals.totalCompanions * unitPrice)})</small>
+            </div>
+
+            <div className="padron-stat-box" style={{ borderLeft: '4px solid #38bdf8' }}>
+              <span style={{ color: '#38bdf8' }}>👶 MENORES &lt;3 AÑOS</span>
+              <strong>{padronTotals.totalMinors}</strong>
+              <small>Ingreso bonificado sin sorteo</small>
+            </div>
+
+            <div className="padron-stat-box" style={{ borderLeft: '4px solid #10b981' }}>
+              <span style={{ color: '#10b981' }}>🟢 INGRESADOS AL SALÓN</span>
+              <strong style={{ color: '#10b981' }}>{padronTotals.totalCheckedIn}</strong>
+              <small>Faltan: {padronTotals.totalPending}</small>
+            </div>
+          </div>
+
+          {/* Tabla Resumen de Conteo por Categoría */}
+          <div className="padron-summary-table-wrap">
+            <div style={{ padding: '14px 18px', background: '#070e19', borderBottom: '1px solid #182d49', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+              <h3 style={{ margin: 0, fontSize: '15px', color: '#ffffff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Trophy size={16} color="#fbbf24" /> Planilla Resumen de Conteo por Categoría
+              </h3>
+              <span style={{ fontSize: '12px', color: '#8496ad' }}>
+                {categoryStats.filter(c => c.totalAttendees > 0).length} categorías con personas inscriptas
+              </span>
+            </div>
+
+            <table className="padron-summary-table">
+              <thead>
+                <tr>
+                  <th>Categoría</th>
+                  <th style={{ textAlign: 'center' }}>⚽ Jugadores</th>
+                  <th style={{ textAlign: 'center' }}>🎟️ Acompañantes</th>
+                  <th style={{ textAlign: 'center' }}>👶 Menores &lt;3</th>
+                  <th style={{ textAlign: 'center' }}>Total Asistentes</th>
+                  <th style={{ textAlign: 'center' }}>🟢 Ingresaron</th>
+                  <th style={{ textAlign: 'center' }}>⚪ Faltan</th>
+                  <th className="no-print" style={{ textAlign: 'center' }}>Acción</th>
+                </tr>
+              </thead>
+              <tbody>
+                {categoryStats.map(cs => {
+                  if (cs.totalAttendees === 0 && padronCategoryFilter !== 'all' && padronCategoryFilter !== cs.category) return null
+                  return (
+                    <tr key={cs.category}>
+                      <td>
+                        <strong style={{ color: '#ffffff' }}>{cs.category}</strong>
+                      </td>
+                      <td style={{ textAlign: 'center', color: cs.players.length > 0 ? '#00d2b4' : '#64748b', fontWeight: cs.players.length > 0 ? 700 : 'normal' }}>
+                        {cs.players.length}
+                      </td>
+                      <td style={{ textAlign: 'center', color: cs.companions.length > 0 ? '#fbbf24' : '#64748b', fontWeight: cs.companions.length > 0 ? 700 : 'normal' }}>
+                        {cs.companions.length}
+                      </td>
+                      <td style={{ textAlign: 'center', color: cs.minors.length > 0 ? '#38bdf8' : '#64748b', fontWeight: cs.minors.length > 0 ? 700 : 'normal' }}>
+                        {cs.minors.length}
+                      </td>
+                      <td style={{ textAlign: 'center', fontWeight: 800, color: '#ffffff', fontSize: '14px' }}>
+                        {cs.totalAttendees}
+                      </td>
+                      <td style={{ textAlign: 'center', color: '#10b981', fontWeight: 700 }}>
+                        {cs.checkedIn}
+                      </td>
+                      <td style={{ textAlign: 'center', color: cs.pending > 0 ? '#8496ad' : '#10b981' }}>
+                        {cs.pending}
+                      </td>
+                      <td className="no-print" style={{ textAlign: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn-dash-outline"
+                          style={{ padding: '4px 10px', fontSize: '11px' }}
+                          onClick={() => {
+                            setPadronCategoryFilter(cs.category)
+                            setExpandedCategories(prev => ({ ...prev, [cs.category]: true }))
+                          }}
+                        >
+                          Ver Lista
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td>TOTAL GENERAL</td>
+                  <td style={{ textAlign: 'center', color: '#00d2b4' }}>{padronTotals.totalPlayers}</td>
+                  <td style={{ textAlign: 'center', color: '#fbbf24' }}>{padronTotals.totalCompanions}</td>
+                  <td style={{ textAlign: 'center', color: '#38bdf8' }}>{padronTotals.totalMinors}</td>
+                  <td style={{ textAlign: 'center', fontSize: '16px', color: '#ffffff' }}>{padronTotals.totalAttendees}</td>
+                  <td style={{ textAlign: 'center', color: '#10b981' }}>{padronTotals.totalCheckedIn}</td>
+                  <td style={{ textAlign: 'center', color: '#ff6874' }}>{padronTotals.totalPending}</td>
+                  <td className="no-print" style={{ textAlign: 'center' }}>—</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Filtros de la lista detallada (en pantalla) */}
+          <div className="padron-filters-bar no-print">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#8496ad', fontSize: '12px' }}>
+              <Filter size={15} /> <b>Filtrar lista:</b>
+            </div>
+
+            <select
+              className="padron-filter-select"
+              value={padronCategoryFilter}
+              onChange={e => setPadronCategoryFilter(e.target.value)}
+            >
+              <option value="all">Todas las categorías ({categoryStats.reduce((acc, c) => acc + c.totalAttendees, 0)})</option>
+              {categoryStats.map(c => (
+                <option key={c.category} value={c.category}>
+                  {c.category} ({c.totalAttendees})
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="padron-filter-select"
+              value={padronRoleFilter}
+              onChange={e => setPadronRoleFilter(e.target.value as any)}
+            >
+              <option value="all">Todos los roles</option>
+              <option value="jugador">⚽ Solo Jugadores</option>
+              <option value="acompanante">🎟️ Solo Acompañantes</option>
+              <option value="menor">👶 Solo Menores &lt;3 años</option>
+            </select>
+
+            <select
+              className="padron-filter-select"
+              value={padronStatusFilter}
+              onChange={e => setPadronStatusFilter(e.target.value as any)}
+            >
+              <option value="all">Todos los estados</option>
+              <option value="used">🟢 Ingresados en puerta</option>
+              <option value="valid">⚪ Faltantes / Sin ingresar</option>
+            </select>
+
+            <div className="search-box" style={{ marginLeft: 'auto', maxWidth: '280px' }}>
+              <Search size={15} />
+              <input
+                type="text"
+                placeholder="Buscar por nombre..."
+                value={padronSearch}
+                onChange={e => setPadronSearch(e.target.value)}
+              />
+            </div>
+
+            {(padronCategoryFilter !== 'all' || padronRoleFilter !== 'all' || padronStatusFilter !== 'all' || padronSearch.trim()) && (
+              <button
+                type="button"
+                className="btn-dash-outline"
+                style={{ padding: '6px 10px', fontSize: '11px', color: '#ef4444', borderColor: '#ef4444' }}
+                onClick={() => {
+                  setPadronCategoryFilter('all')
+                  setPadronRoleFilter('all')
+                  setPadronStatusFilter('all')
+                  setPadronSearch('')
+                }}
+              >
+                Limpiar filtros
+              </button>
+            )}
+          </div>
+
+          {/* Listado detallado dividido por categoría */}
+          <div className="padron-categories-list">
+            {categoryStats.map(cs => {
+              if (padronCategoryFilter !== 'all' && cs.category !== padronCategoryFilter) return null
+              if (cs.totalAttendees === 0) return null
+
+              const allCategoryTickets = [...cs.players, ...cs.companions, ...cs.minors]
+              const filteredTickets = allCategoryTickets.filter(ticket => {
+                const { cleanName, role } = parseTicketInfo(ticket)
+                if (padronRoleFilter !== 'all' && role !== padronRoleFilter) return false
+                const isCheckedIn = ticket.status === 'used' || !!ticket.checked_in_at
+                if (padronStatusFilter === 'used' && !isCheckedIn) return false
+                if (padronStatusFilter === 'valid' && isCheckedIn) return false
+                if (padronSearch.trim()) {
+                  const q = padronSearch.toLowerCase()
+                  const order = orders.find(o => o.id === ticket.order_id)
+                  const matchAttendee = cleanName.toLowerCase().includes(q)
+                  const matchBuyer = order?.buyer_full_name?.toLowerCase().includes(q)
+                  const matchDni = order?.buyer_dni?.toLowerCase().includes(q)
+                  if (!matchAttendee && !matchBuyer && !matchDni) return false
+                }
+                return true
+              })
+
+              if (filteredTickets.length === 0 && (padronSearch.trim() || padronRoleFilter !== 'all' || padronStatusFilter !== 'all')) return null
+
+              const isOpen = expandedCategories[cs.category] !== false // Default open
+
+              return (
+                <div key={cs.category} className="padron-category-section print-category-card">
+                  <div
+                    className={`padron-category-header ${isOpen ? 'open' : ''}`}
+                    onClick={() => toggleCategoryExpand(cs.category)}
+                  >
+                    <div className="padron-cat-title">
+                      <span>🏆 {cs.category}</span>
+                      <span style={{ fontSize: '12px', color: '#8496ad', fontFamily: 'sans-serif' }}>
+                        ({filteredTickets.length} de {cs.totalAttendees} personas)
+                      </span>
+                    </div>
+
+                    <div className="padron-cat-badges">
+                      {cs.players.length > 0 && (
+                        <span className="role-badge-jugador">⚽ {cs.players.length} jugadores</span>
+                      )}
+                      {cs.companions.length > 0 && (
+                        <span className="role-badge-acompanante">🎟️ {cs.companions.length} acompañantes</span>
+                      )}
+                      {cs.minors.length > 0 && (
+                        <span className="role-badge-menor">👶 {cs.minors.length} menores &lt;3</span>
+                      )}
+                      <span className="no-print" style={{ color: '#8496ad', marginLeft: '6px' }}>
+                        {isOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                      </span>
+                    </div>
+                  </div>
+
+                  {isOpen && (
+                    <div className="table-scroll-wrap" style={{ margin: 0, borderRadius: 0, border: 'none' }}>
+                      <table className="admin-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: '40px' }}>#</th>
+                            <th>Nombre del Asistente</th>
+                            <th>Tipo / Rol</th>
+                            <th>N° Entrada (Sorteo)</th>
+                            <th>Titular / Contacto</th>
+                            <th>Estado Puerta</th>
+                            <th className="no-print">Check-in</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredTickets.map((ticket, index) => {
+                            const { cleanName, role } = parseTicketInfo(ticket)
+                            const order = orders.find(o => o.id === ticket.order_id)
+                            const isCheckedIn = ticket.status === 'used' || !!ticket.checked_in_at
+                            const isPlayer = isPlayerTicket(ticket)
+                            const ticketNum = role === 'menor' ? 'MENOR' : isPlayer ? 'JUGADOR' : (getTicketDisplayNumber(ticket) || '')
+
+                            return (
+                              <tr key={ticket.id}>
+                                <td style={{ color: '#64748b', fontSize: '11px' }}>{index + 1}</td>
+                                <td>
+                                  <strong style={{ color: '#ffffff', fontSize: '13px' }}>{cleanName}</strong>
+                                </td>
+                                <td>
+                                  {role === 'menor' ? (
+                                    <span className="role-badge-menor">👶 Menor &lt;3 años ($0)</span>
+                                  ) : role === 'jugador' ? (
+                                    <span className="role-badge-jugador">⚽ Jugador ($0)</span>
+                                  ) : (
+                                    <span className="role-badge-acompanante">🎟️ Acompañante</span>
+                                  )}
+                                </td>
+                                <td>
+                                  {role === 'menor' ? (
+                                    <span style={{ fontSize: '11px', color: '#38bdf8' }}>Sin sorteo</span>
+                                  ) : isPlayer ? (
+                                    <span style={{ fontSize: '11px', color: '#00d2b4' }}>Sin sorteo</span>
+                                  ) : (
+                                    <span className="ticket-badge-number">🎟️ N° {ticketNum}</span>
+                                  )}
+                                </td>
+                                <td>
+                                  <div style={{ fontSize: '12px', color: '#cfd8e3' }}>
+                                    {order ? (
+                                      <>
+                                        <b>{order.buyer_full_name}</b>
+                                        <div style={{ fontSize: '11px', color: '#8496ad' }}>
+                                          DNI: {order.buyer_dni} · Tel: {order.buyer_phone}
+                                        </div>
+                                      </>
+                                    ) : (
+                                      '—'
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
+                                  {isCheckedIn ? (
+                                    <span className="badge-status badge-used">
+                                      🟢 INGRESÓ {ticket.checked_in_at ? `(${new Date(ticket.checked_in_at).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs)` : ''}
+                                    </span>
+                                  ) : (
+                                    <span className="badge-status badge-valid">⚪ SIN INGRESAR</span>
+                                  )}
+                                </td>
+                                <td className="no-print">
+                                  {!isCheckedIn ? (
+                                    <button
+                                      type="button"
+                                      className="btn-action-checkin"
+                                      onClick={() => void handleManualCheckIn(ticket)}
+                                    >
+                                      <Check size={13} /> Ingresar
+                                    </button>
+                                  ) : (
+                                    <span style={{ color: '#10b981', fontSize: '11px', fontWeight: 700 }}>✅ Presente</span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Bloque de firmas para el informe impreso / PDF */}
+          <div className="padron-print-only padron-print-signatures">
+            <div className="signature-box">
+              <p><b>Planilla y Conteo Confeccionado por:</b></p>
+              <br />
+              <p>Firma y Aclaración</p>
+            </div>
+            <div className="signature-box">
+              <p><b>Revisión Administración Andes Talleres:</b></p>
+              <br />
+            </div>
           </div>
         </section>
       )}
