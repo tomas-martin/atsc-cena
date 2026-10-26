@@ -35,8 +35,10 @@ Stack: **React 19**, **Vite**, **TypeScript**, **Supabase**, **Nodemailer (SMTP 
 ### Variables Frontend (Públicas, prefijo `VITE_`):
 - `VITE_SUPABASE_URL`: URL del proyecto de Supabase.
 - `VITE_SUPABASE_ANON_KEY`: Clave pública anon de Supabase.
-- `VITE_CLUB_ALIAS`: Alias bancario oficial (ej: `ANDES.TALLERES.FUTSAL`).
-- `VITE_WHATSAPP_PHONE`: Número de WhatsApp con código de país y área sin guiones (ej: `5492610000000`).
+- `VITE_CLUB_ALIAS`: Alias oficial para transferencias (ej: `futsal.atsc`).
+- `VITE_CLUB_TITULAR`: Titular de la cuenta (ej: `Jimena Patricia Calivar`).
+- `VITE_CLUB_BANCO`: Banco o billetera virtual (ej: `Naranja X`).
+- `VITE_WHATSAPP_PHONE`: Número de WhatsApp con código de país y área sin guiones (ej: `5492615751033`).
 - `VITE_CLUB_LOGO_URL`: (Opcional) URL pública del logo alojado en Supabase Storage.
 
 ### Variables Backend SMTP (Secretas para Vercel Serverless Functions y `.env.local`):
@@ -78,8 +80,10 @@ npm run dev
 3. Cargar las siguientes variables:
    - `VITE_SUPABASE_URL`
    - `VITE_SUPABASE_ANON_KEY`
-   - `VITE_CLUB_ALIAS`
-   - `VITE_WHATSAPP_PHONE`
+   - `VITE_CLUB_ALIAS` (`futsal.atsc`)
+   - `VITE_CLUB_TITULAR` (`Jimena Patricia Calivar`)
+   - `VITE_CLUB_BANCO` (`Naranja X`)
+   - `VITE_WHATSAPP_PHONE` (`5492615751033`)
    - `VITE_CLUB_LOGO_URL` (opcional)
    - `SMTP_HOST` (`smtp.gmail.com`)
    - `SMTP_PORT` (`465`)

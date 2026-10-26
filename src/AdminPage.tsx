@@ -217,9 +217,9 @@ export default function AdminPage({
   const lastScannedTimeRef = useRef<number>(0)
   const cooldownTimerRef = useRef<any>(null)
 
-  // Función para determinar si una entrada es de jugador o menor (no cuenta para el sorteo)
+  // Función para determinar si una entrada es de jugador, profe o menor (no cuenta para el sorteo)
   function isPlayerTicket(ticket: { attendee_name?: string; ticket_number?: number | null }): boolean {
-    return ticket.ticket_number == null || ticket.ticket_number <= 0 || /jugador/i.test(ticket.attendee_name || '') || /menor/i.test(ticket.attendee_name || '')
+    return ticket.ticket_number == null || ticket.ticket_number <= 0 || /jugador|profe|profesor/i.test(ticket.attendee_name || '') || /menor/i.test(ticket.attendee_name || '')
   }
 
   // Mapeo correlativo estable para sorteo (ÚNICAMENTE para acompañantes)
@@ -334,7 +334,7 @@ export default function AdminPage({
     let role: 'jugador' | 'acompanante' | 'menor' = 'acompanante'
     if (/menor/i.test(raw)) {
       role = 'menor'
-    } else if (/jugador/i.test(raw) || ticket.ticket_number === 0 || ticket.ticket_number == null) {
+    } else if (/jugador|profe|profesor/i.test(raw) || ticket.ticket_number === 0 || ticket.ticket_number == null) {
       role = 'jugador'
     }
 
@@ -507,7 +507,7 @@ export default function AdminPage({
     let msg = `📊 *REPORTE DE CONTEO - CENA ANDES TALLERES 2026*\n`
     msg += `📅 *Fecha:* ${new Date().toLocaleDateString('es-AR')} ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs\n\n`
     msg += `*TOTAL ASISTENTES:* ${padronTotals.totalAttendees}\n`
-    msg += `⚽ Jugadores: ${padronTotals.totalPlayers}\n`
+    msg += `⚽ Jugadores / Profes: ${padronTotals.totalPlayers}\n`
     msg += `🎟️ Acompañantes: ${padronTotals.totalCompanions}\n`
     msg += `👶 Menores <3 años: ${padronTotals.totalMinors}\n`
     msg += `🟢 Ingresados en puerta: ${padronTotals.totalCheckedIn} / ${padronTotals.totalAttendees}\n\n`
@@ -1417,7 +1417,7 @@ export default function AdminPage({
           orderId: order.id,
           eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
           date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
+          venue: 'Estadio Salvador Bonanno · Andes Talleres',
           isPlayer: isPl,
         }
       })
@@ -1539,7 +1539,7 @@ export default function AdminPage({
           orderId: order.id,
           eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
           date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Microestadio Andes Talleres Sport Club · Godoy Cruz, Mendoza',
+          venue: 'Estadio Salvador Bonanno · Andes Talleres',
           isPlayer: isPl,
         }
       })
@@ -2435,7 +2435,7 @@ export default function AdminPage({
                         </span>
                       ) : isPlayerTicket(ticket) ? (
                         <span className="ticket-badge-player">
-                          ⚽ Jugador (Sin sorteo)
+                          ⚽ Jugador / Profe (Sin sorteo)
                         </span>
                       ) : (
                         <span className="ticket-badge-number">
@@ -3375,7 +3375,7 @@ export default function AdminPage({
             <div className="padron-print-header">
               <div>
                 <h1>ANDES TALLERES SPORT CLUB</h1>
-                <p><b>CENA DE FIN DE AÑO 2026</b> · MICROESTADIO ANDES TALLERES</p>
+                <p><b>CENA DE FIN DE AÑO 2026</b> · ESTADIO SALVADOR BONANNO - ANDES TALLERES</p>
                 <p style={{ fontSize: '9pt', color: '#666' }}>Planilla Oficial de Conteo y Padrón de Asistentes clasificado por Categoría</p>
               </div>
               <div style={{ textAlign: 'right', fontSize: '9pt', color: '#555' }}>
@@ -3431,7 +3431,7 @@ export default function AdminPage({
             </div>
 
             <div className="padron-stat-box" style={{ borderLeft: '4px solid #00d2b4' }}>
-              <span style={{ color: '#00d2b4' }}>⚽ JUGADORES DEL CLUB</span>
+              <span style={{ color: '#00d2b4' }}>⚽ JUGADORES Y PROFES DEL CLUB</span>
               <strong>{padronTotals.totalPlayers}</strong>
               <small>Entradas bonificadas ($0)</small>
             </div>
@@ -3470,7 +3470,7 @@ export default function AdminPage({
               <thead>
                 <tr>
                   <th>Categoría</th>
-                  <th style={{ textAlign: 'center' }}>⚽ Jugadores</th>
+                  <th style={{ textAlign: 'center' }}>⚽ Jugadores / Profes</th>
                   <th style={{ textAlign: 'center' }}>🎟️ Acompañantes</th>
                   <th style={{ textAlign: 'center' }}>👶 Menores &lt;3</th>
                   <th style={{ textAlign: 'center' }}>Total Asistentes</th>
@@ -3562,7 +3562,7 @@ export default function AdminPage({
               onChange={e => setPadronRoleFilter(e.target.value as any)}
             >
               <option value="all">Todos los roles</option>
-              <option value="jugador">⚽ Solo Jugadores</option>
+              <option value="jugador">⚽ Solo Jugadores / Profes</option>
               <option value="acompanante">🎟️ Solo Acompañantes</option>
               <option value="menor">👶 Solo Menores &lt;3 años</option>
             </select>
@@ -3647,7 +3647,7 @@ export default function AdminPage({
 
                     <div className="padron-cat-badges">
                       {cs.players.length > 0 && (
-                        <span className="role-badge-jugador">⚽ {cs.players.length} jugadores</span>
+                        <span className="role-badge-jugador">⚽ {cs.players.length} jugadores/profes</span>
                       )}
                       {cs.companions.length > 0 && (
                         <span className="role-badge-acompanante">🎟️ {cs.companions.length} acompañantes</span>

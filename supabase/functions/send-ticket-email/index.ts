@@ -65,11 +65,11 @@ Deno.serve(async (req) => {
             <div style="max-width: 600px; margin: 0 auto; background: #0b1726; border: 1px solid #1a2d47; border-radius: 10px; padding: 30px;">
               <div style="text-align: center; margin-bottom: 25px;">
                 <h1 style="color: #d92736; margin: 0; font-size: 24px;">ANDES TALLERES SPORT CLUB</h1>
-                <p style="color: #8a9ab5; margin: 5px 0 0; font-size: 13px;">Gran Cena de Fin de Año 2026 · Mendoza</p>
+                <p style="color: #8a9ab5; margin: 5px 0 0; font-size: 13px;">Gran Cena de Fin de Año 2026 · Estadio Salvador Bonanno</p>
               </div>
               <h2 style="color: #ffffff; font-size: 20px;">¡Hola, ${confirmation.buyer.fullName}!</h2>
               <p style="color: #c2cad7; line-height: 1.6; font-size: 14px;">
-                Tu pago ha sido acreditado exitosamente. A continuación tenés tus entradas oficiales con código QR.
+                Tu pago ha sido acreditado exitosamente. Te esperamos el <b>Sábado 19 de Diciembre</b> en el <b>Estadio Salvador Bonanno</b> de Andes Talleres. A continuación tenés tus entradas oficiales con código QR.
               </p>
               ${ticketsHtml}
               <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #1a2d47; text-align: center; color: #586a85; font-size: 11px;">

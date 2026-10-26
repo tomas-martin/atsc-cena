@@ -24,10 +24,16 @@ import {
 const DEFAULT_PRICE_ARS = 25000
 
 // Datos bancarios y de contacto oficiales
-const CLUB_ALIAS = (import.meta.env.VITE_CLUB_ALIAS as string) || 'ANDES.TALLERES.FUTSAL'
-const CLUB_CBU = '0170081720000001234567'
-const CLUB_TITULAR = 'Andes Talleres Sport Club'
-const WHATSAPP_PHONE = (import.meta.env.VITE_WHATSAPP_PHONE as string) || '5492610000000'
+const CLUB_ALIAS = (import.meta.env.VITE_CLUB_ALIAS as string) || 'futsal.atsc'
+const CLUB_TITULAR = (import.meta.env.VITE_CLUB_TITULAR as string) || 'Jimena Patricia Calivar'
+const CLUB_BANCO = (import.meta.env.VITE_CLUB_BANCO as string) || 'Naranja X'
+const CLUB_CBU = (import.meta.env.VITE_CLUB_CBU as string) || ''
+const WHATSAPP_PHONE = (import.meta.env.VITE_WHATSAPP_PHONE as string) || '5492615751033'
+
+// Datos oficiales del evento
+const EVENT_NAME = 'Cena de Fin de Año 2026 - Andes Talleres'
+const EVENT_DATE = 'Sábado 19 de Diciembre de 2026 · 21:30 hs'
+const EVENT_VENUE = 'Estadio Salvador Bonanno · Andes Talleres'
 
 const money = (amount: number) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount)
@@ -202,11 +208,11 @@ function App() {
       const hasNameError = Object.keys(errors).some(k => k.startsWith('player_') && !k.startsWith('player_cat_'))
       const hasCatError = Object.keys(errors).some(k => k.startsWith('player_cat_'))
       if (hasNameError && hasCatError) {
-        setErrorMessage('Por favor completá los nombres y seleccioná las categorías de los jugadores.')
+        setErrorMessage('Por favor completá los nombres y seleccioná las categorías de los jugadores / profesores.')
       } else if (hasCatError) {
-        setErrorMessage('Por favor seleccioná la categoría de cada jugador ingresado.')
+        setErrorMessage('Por favor seleccioná la categoría de cada jugador o profesor ingresado.')
       } else {
-        setErrorMessage('Por favor completá los nombres de los jugadores ingresados.')
+        setErrorMessage('Por favor completá los nombres de los jugadores o profesores ingresados.')
       }
       const firstKey = Object.keys(errors)[0]
       setTimeout(() => {
@@ -361,18 +367,18 @@ function App() {
             return v.toString(16)
           })
 
-      // A) Entradas de Jugadores (bonificadas $0, sin sorteo)
+      // A) Entradas de Jugadores y Profes (bonificadas $0, sin sorteo)
       for (let i = 0; i < players.length; i++) {
         const p = players[i]
-        const pName = p.name.trim() || `${buyer.fullName.trim()} (Jugador)`
+        const pName = p.name.trim() || `${buyer.fullName.trim()} (Jugador/Profe)`
         tickets.push({
-          ticketNumber: 'JUGADOR',
-          attendeeName: `${pName} (Jugador · ${p.category})`,
+          ticketNumber: 'JUGADOR/PROFE',
+          attendeeName: `${pName} (Jugador/Profe · ${p.category})`,
           qrToken: makeUuid(),
           orderId: displayOrderId,
-          eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
-          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
+          eventName: EVENT_NAME,
+          date: EVENT_DATE,
+          venue: EVENT_VENUE,
           isPlayer: true,
           role: 'jugador',
           category: (p.category || 'Escuelita') as Category,
@@ -404,9 +410,9 @@ function App() {
           attendeeName: `${attendeeRaw} (Acompañante · ${primaryCategory})`,
           qrToken: makeUuid(),
           orderId: displayOrderId,
-          eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
-          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
+          eventName: EVENT_NAME,
+          date: EVENT_DATE,
+          venue: EVENT_VENUE,
           isPlayer: false,
           role: 'acompanante',
           category: (primaryCategory || 'Escuelita') as Category,
@@ -427,9 +433,9 @@ function App() {
           attendeeName: `${attendeeRaw} (Menor <3 años · ${primaryCategory})`,
           qrToken: makeUuid(),
           orderId: displayOrderId,
-          eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
-          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Microestadio Andes Talleres · Godoy Cruz, Mendoza',
+          eventName: EVENT_NAME,
+          date: EVENT_DATE,
+          venue: EVENT_VENUE,
           isPlayer: true,
           role: 'menor',
           category: (primaryCategory || 'Escuelita') as Category,
@@ -540,7 +546,7 @@ function App() {
   // Generar URL de WhatsApp con mensaje prearmado
   const getWhatsAppUrl = () => {
     if (!orderConfirmation) return '#'
-    const msg = `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres.\n\n*Pedido:* #${orderConfirmation.orderId}\n*Titular:* ${orderConfirmation.buyer.fullName}\n*DNI:* ${orderConfirmation.buyer.dni}\n*Categoría:* ${primaryCategory}\n*Entradas:* ${orderConfirmation.quantity}\n*Total:* ${money(orderConfirmation.totalArs)}\n*Email:* ${orderConfirmation.buyer.email}`
+    const msg = `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres (19 de Diciembre - Estadio Salvador Bonanno).\n\n*Pedido:* #${orderConfirmation.orderId}\n*Titular:* ${orderConfirmation.buyer.fullName}\n*DNI:* ${orderConfirmation.buyer.dni}\n*Categoría:* ${primaryCategory}\n*Entradas:* ${orderConfirmation.quantity}\n*Total:* ${money(orderConfirmation.totalArs)}\n*Email:* ${orderConfirmation.buyer.email}`
     return `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(msg)}`
   }
 
@@ -625,7 +631,7 @@ function App() {
                 <div className="info-divider" />
                 <div className="info-item">
                   <MapPin size={18} />
-                  <span>Andes Talleres · Godoy Cruz</span>
+                  <span>Estadio Salvador Bonanno · Andes Talleres</span>
                 </div>
                 <div className="info-divider" />
                 <div className="info-item">
@@ -662,7 +668,7 @@ function App() {
               </button>
               <div className="step-badge">PASO 1 DE 3 · SELECCIÓN DE ENTRADAS</div>
               <h1>Armá tu grupo y seleccioná tus entradas</h1>
-              <p>Elegí quiénes asistirán al evento: jugadores bonificados, acompañantes mayores y menores.</p>
+              <p>Elegí quiénes asistirán al evento: jugadores y profesores bonificados, acompañantes mayores y menores.</p>
             </div>
 
             <div className="form-container">
@@ -672,23 +678,23 @@ function App() {
                   <div className="card-icon-round"><Users size={20} /></div>
                   <div>
                     <h3>1. Entradas del Grupo (¿Quiénes van a la fiesta?)</h3>
-                    <p>Podés sumar a jugadores del club, acompañantes mayores y niños menores de 3 años</p>
+                    <p>Podés sumar a jugadores y profesores del club, acompañantes mayores y niños menores de 3 años</p>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-                  {/* BLOQUE A: JUGADORES DEL CLUB (GRATIS $0) */}
+                  {/* BLOQUE A: JUGADORES Y PROFESORES DEL CLUB (GRATIS $0) */}
                   <div className="ticket-counter-box" style={{ background: 'rgba(0, 210, 180, 0.05)', border: '1px solid rgba(0, 210, 180, 0.3)', borderRadius: '8px', padding: '16px' }}>
                     <div className="counter-info">
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                        <strong style={{ color: '#00d2b4', fontSize: '15px' }}>⚽ Jugadores del Club</strong>
+                        <strong style={{ color: '#00d2b4', fontSize: '15px' }}>⚽ Jugadores y Profes del Club</strong>
                         <span style={{ background: 'rgba(0, 210, 180, 0.2)', color: '#00d2b4', fontSize: '11px', fontWeight: 800, padding: '2px 8px', borderRadius: '4px' }}>
                           ¡ENTRADA BONIFICADA ($0)!
                         </span>
                       </div>
                       <span style={{ fontSize: '13px', color: '#c2cad7' }}>
-                        Chicos o jugadores de cualquier división (Escuelita, C5 hasta Primera, Seniors).
+                        Chicos, jugadores y profesores / cuerpo técnico de cualquier división (Escuelita, C5 hasta Primera, Seniors).
                       </span>
                       <small style={{ color: '#8a9ab5', display: 'block', marginTop: '4px' }}>
                         Entrada bonificada sin costo al 100% · No participan del sorteo de premios
@@ -698,7 +704,7 @@ function App() {
                     <div className="stepper-modern">
                       <button
                         type="button"
-                        aria-label="Restar jugador"
+                        aria-label="Restar jugador o profe"
                         onClick={() => {
                           if (players.length > 0) {
                             setPlayers(prev => prev.slice(0, -1))
@@ -711,7 +717,7 @@ function App() {
                       <span className="stepper-val" style={{ color: '#00d2b4' }}>{players.length}</span>
                       <button
                         type="button"
-                        aria-label="Sumar jugador"
+                        aria-label="Sumar jugador o profe"
                         onClick={() => {
                           if (players.length < 10) {
                             setPlayers(prev => [
@@ -727,25 +733,25 @@ function App() {
                     </div>
                   </div>
 
-                  {/* CARDS DE DATOS DE JUGADORES (SI HAY 1 O MÁS) */}
+                  {/* CARDS DE DATOS DE JUGADORES Y PROFES (SI HAY 1 O MÁS) */}
                   {players.length > 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '-6px', marginBottom: '8px' }}>
                       {players.map((p, idx) => (
                         <div key={`player-${idx}`} className="player-input-card">
                           <div className="player-card-header">
                             <span className="player-index-badge">
-                              ⚽ Datos del Jugador #{idx + 1}
+                              ⚽ Datos del Jugador / Profe #{idx + 1}
                             </span>
                           </div>
 
                           <div className="player-inputs-row">
                             <div className="form-field">
-                              <label htmlFor={`field-player_${idx}`}>Nombre y Apellido del Jugador *</label>
+                              <label htmlFor={`field-player_${idx}`}>Nombre y Apellido del Jugador / Profe *</label>
                               <div className="input-with-tooltip-wrap">
                                 <input
                                   id={`field-player_${idx}`}
                                   type="text"
-                                  placeholder="Ej: Mateo Rodríguez"
+                                  placeholder="Ej: Mateo Rodríguez (Jugador) o Lucas Pérez (Profe)"
                                   className={fieldErrors[`player_${idx}`] ? 'input-field-error' : ''}
                                   value={p.name}
                                   onChange={e => {
@@ -1240,7 +1246,7 @@ function App() {
                 <div className="ticket-pricing-summary" style={{ marginTop: '0' }}>
                   {players.length > 0 && (
                     <div className="summary-breakdown-row">
-                      <span>⚽ Entradas Jugadores ({players.length}):</span>
+                      <span>⚽ Entradas Jugadores y Profes ({players.length}):</span>
                       <strong className="text-green">¡GRATIS! ($0)</strong>
                     </div>
                   )}
@@ -1310,12 +1316,12 @@ function App() {
                 {total > 0 ? 'PASO 3 DE 3 · TRANSFERENCIA POR ALIAS' : 'PASO 3 DE 3 · CONFIRMACIÓN BONIFICADA'}
               </div>
               <h1>
-                {total > 0 ? 'Transferí al alias oficial del club' : 'Entradas de Jugador 100% Bonificadas'}
+                {total > 0 ? 'Transferí al alias oficial del club' : 'Entradas de Jugador / Profe 100% Bonificadas'}
               </h1>
               <p>
                 {total > 0
                   ? 'Copiá el alias, hacé la transferencia desde tu banco o billetera virtual, y al confirmar te habilitará el envío del comprobante por WhatsApp.'
-                  : 'Tus entradas corresponden a Jugadores del Club y no tienen costo. Confirmá para recibir tus códigos QR al instante por correo.'}
+                  : 'Tus entradas corresponden a Jugadores o Profesores del Club y no tienen costo. Confirmá para recibir tus códigos QR al instante por correo.'}
               </p>
             </div>
 
@@ -1364,7 +1370,7 @@ function App() {
                         <span>Desglose de cobro:</span>
                         <b>
                           {companionCount} acompañante(s) a {money(unitPrice)}
-                          {players.length > 0 ? ` (+ ${players.length} jugador/es gratis)` : ''}
+                          {players.length > 0 ? ` (+ ${players.length} jugador/es o profe/s gratis)` : ''}
                           {childrenCount > 0 ? ` (+ ${childrenCount} menor/es <3 años gratis)` : ''}
                         </b>
                       </div>
@@ -1373,9 +1379,15 @@ function App() {
                         <b>{CLUB_TITULAR}</b>
                       </div>
                       <div className="cbu-row">
-                        <span>CBU:</span>
-                        <code>{CLUB_CBU}</code>
+                        <span>Banco / Billetera:</span>
+                        <b>{CLUB_BANCO}</b>
                       </div>
+                      {CLUB_CBU ? (
+                        <div className="cbu-row">
+                          <span>CBU / CVU:</span>
+                          <code>{CLUB_CBU}</code>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -1420,7 +1432,7 @@ function App() {
                     </div>
                     <div className="sum-divider" />
                     <div className="sum-row">
-                      <span>⚽ Jugadores ($0):</span>
+                      <span>⚽ Jugadores / Profes ($0):</span>
                       <b className="text-green">{players.length}</b>
                     </div>
                     {childrenCount > 0 && (
@@ -1499,7 +1511,7 @@ function App() {
                 <span className="status-badge-free">REGISTRO CONFIRMADO · BONIFICADO ($0)</span>
                 <h1>¡REGISTRO CONFIRMADO #{orderConfirmation.orderId}!</h1>
                 <p>
-                  Tus entradas de jugador quedaron registradas y confirmadas. Te enviamos el correo electrónico con los códigos QR a <b>{orderConfirmation.buyer.email}</b>.
+                  Tus entradas de jugador / profesor quedaron registradas y confirmadas. Te enviamos el correo electrónico con los códigos QR a <b>{orderConfirmation.buyer.email}</b>.
                 </p>
               </div>
             ) : (
@@ -1539,6 +1551,10 @@ function App() {
                   <span>ENVIAR COMPROBANTE POR WHATSAPP</span>
                 </a>
 
+                <div style={{ textAlign: 'center', fontSize: '13px', color: '#8a9ab5', marginTop: '-6px' }}>
+                  <span>WhatsApp de comprobantes: <b>+54 9 261 575-1033</b> (2615751033)</span>
+                </div>
+
                 <div className="resend-info-note">
                   <p>
                     📧 <b>¿Cuándo me llega la entrada con el código QR?</b><br />
@@ -1567,14 +1583,14 @@ function App() {
                           👶 MENOR &lt;3 AÑOS ($0 · Sin sorteo)
                         </span>
                       ) : t.isPlayer ? (
-                        <span className="badge-player-pill">⚽ JUGADOR ($0 · Sin sorteo)</span>
+                        <span className="badge-player-pill">⚽ JUGADOR / PROFE ($0 · Sin sorteo)</span>
                       ) : (
                         <span className="badge-raffle-pill">🎟️ SORTEO N° {t.ticketNumber}</span>
                       )}
                       <span className="conf-club-tag">ATSC 2026</span>
                     </div>
                     <div className="conf-ticket-name">{t.attendeeName}</div>
-                    <small className="conf-ticket-event">Cena de Fin de Año 2026 · Microestadio ATSC</small>
+                    <small className="conf-ticket-event">Cena de Fin de Año 2026 · Estadio Salvador Bonanno</small>
 
                     {confirmationQrUrls[t.qrToken] && (
                       <div className="conf-qr-display">
