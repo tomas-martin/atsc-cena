@@ -1487,7 +1487,7 @@ export default function AdminPage({
 
       if (emailResult.success) {
         setActionFeedback({
-          message: `¡Pago confirmado con éxito! Se despachó el email con ${issuedTickets.length} código(s) QR a ${order.buyer_email}.`,
+          message: `¡Pago confirmado con éxito! Se despachó el email con ${issuedTickets.length} código(s) QR a ${order.buyer_email} (recordale que revise Spam/Correo no deseado si no lo encuentra en Recibidos).`,
           success: true,
         })
       } else {
@@ -1583,7 +1583,7 @@ export default function AdminPage({
 
       if (emailResult.success) {
         setActionFeedback({
-          message: `¡Email reenviado exitosamente con ${issuedTickets.length} código(s) QR a ${order.buyer_email}!`,
+          message: `¡Email reenviado exitosamente con ${issuedTickets.length} código(s) QR a ${order.buyer_email}! (Recordale al asistente revisar Spam/Correo no deseado).`,
           success: true,
         })
       } else {

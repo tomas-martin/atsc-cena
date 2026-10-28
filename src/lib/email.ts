@@ -89,6 +89,14 @@ export async function sendTicketsEmail(
             Presentá los siguientes códigos QR en el ingreso del evento desde tu teléfono celular o impresos.
           </p>
           ${ticketsHtml}
+          <div style="background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: 8px; padding: 14px 18px; margin: 20px 0; text-align: left;">
+            <p style="margin: 0; color: #fbbf24; font-size: 13px; font-weight: bold;">
+              ⚠️ ¿Este correo te llegó a la carpeta de Spam o Correo no deseado?
+            </p>
+            <p style="margin: 6px 0 0; color: #c2cad7; font-size: 12px; line-height: 1.5;">
+              Por favor, marcá este correo como <b>"No es spam"</b> o movelo a tu <b>Bandeja Principal</b>. De esta forma vas a poder acceder rápidamente a tus códigos QR el día del evento en la puerta de ingreso y no te perderás ninguna novedad importante.
+            </p>
+          </div>
           <div style="margin-top: 25px; padding-top: 15px; border-top: 1px solid #1a2d47; text-align: center; color: #586a85; font-size: 12px;">
             <p style="margin: 4px 0;">© 2026 Andes Talleres Sport Club · Todos los derechos reservados.</p>
             <p style="margin: 4px 0;">Este correo fue despachado automáticamente tras la confirmación de tu pago.</p>

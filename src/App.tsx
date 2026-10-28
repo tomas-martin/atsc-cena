@@ -1228,7 +1228,12 @@ function App() {
                         </div>
                       )}
                     </div>
-                    <small className="field-hint">Asegurate de escribirlo correctamente. Te enviaremos todas las entradas emitidas a este correo.</small>
+                    <small className="field-hint">
+                      Asegurate de escribirlo correctamente. Te enviaremos todas las entradas emitidas a este correo.
+                      <span style={{ display: 'block', color: '#fbbf24', marginTop: '4px', fontSize: '11.5px', fontWeight: '500' }}>
+                        ⚠️ Recordá que el correo con tus entradas y códigos QR puede llegar a tu carpeta de <b>Spam</b> o <b>Correo no deseado</b>.
+                      </span>
+                    </small>
                   </div>
                 </div>
               </div>
@@ -1513,6 +1518,13 @@ function App() {
                 <p>
                   Tus entradas de jugador / profesor quedaron registradas y confirmadas. Te enviamos el correo electrónico con los códigos QR a <b>{orderConfirmation.buyer.email}</b>.
                 </p>
+                <div style={{ maxWidth: '580px', margin: '18px auto 0', background: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.35)', borderRadius: '8px', padding: '12px 18px', textAlign: 'left', display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <AlertCircle size={24} style={{ color: '#fbbf24', flexShrink: 0 }} />
+                  <div style={{ fontSize: '13px', color: '#e2e8f0', lineHeight: '1.5' }}>
+                    <strong style={{ color: '#fbbf24', display: 'block', marginBottom: '2px' }}>¿No encontrás el correo en tu bandeja de entrada?</strong>
+                    Revisá tu carpeta de <b>Spam</b>, <b>Correo no deseado</b> o <b>Promociones</b> en <b>{orderConfirmation.buyer.email}</b>. A veces los filtros de correo desvían los correos automáticos con códigos QR adjuntos.
+                  </div>
+                </div>
               </div>
             ) : (
               /* Banner de Validación Pendiente para Transferencia con Acompañantes */
@@ -1560,6 +1572,12 @@ function App() {
                     📧 <b>¿Cuándo me llega la entrada con el código QR?</b><br />
                     Apenas el equipo de administración verifique el pago en el banco, <b>recibirás automáticamente un correo a {orderConfirmation.buyer.email}</b> con los códigos QR de acceso para cada asistente.
                   </p>
+                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid rgba(255, 255, 255, 0.1)', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: '17px', lineHeight: '1' }}>⚠️</span>
+                    <div style={{ color: '#fbbf24', fontSize: '12.5px', lineHeight: '1.5' }}>
+                      <b>Atención importante sobre el correo:</b> Si tras la confirmación de la orden no ves el correo en tu Bandeja Principal, <b>revisá tu carpeta de Spam, Correo no deseado o Promociones</b>. Para evitar que vuelva a ocurrir, podés marcarlo como "No es spam".
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

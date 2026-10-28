@@ -6,3 +6,7 @@ dist
 .DS_Store
 .vercel
 .supabase
+MANUAL_VENTAS_CONFIDENCIAL.md
+*.privado.md
+*.confidencial.md
+manual_ventas*
