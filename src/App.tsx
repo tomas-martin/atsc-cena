@@ -70,6 +70,28 @@ function App() {
   // ── Estados de la navegación por secciones ──
   const [currentStep, setCurrentStep] = useState<Step>('fiesta')
 
+  // ── Función robusta para resetear el scroll a la parte superior ──
+  const scrollToTop = () => {
+    try {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' })
+    } catch {
+      window.scrollTo(0, 0)
+    }
+    if (document.documentElement) document.documentElement.scrollTop = 0
+    if (document.body) document.body.scrollTop = 0
+  }
+
+  // ── Garantizar que la pantalla suba al inicio automáticamente cada vez que cambia el paso ──
+  useEffect(() => {
+    scrollToTop()
+    const rId = requestAnimationFrame(scrollToTop)
+    const tId = setTimeout(scrollToTop, 50)
+    return () => {
+      cancelAnimationFrame(rId)
+      clearTimeout(tId)
+    }
+  }, [currentStep])
+
   // ── Logo y configuración del evento desde Supabase ──
   const [logoUrl, setLogoUrl] = useState<string | null>(
     (import.meta.env.VITE_CLUB_LOGO_URL as string) || null
@@ -231,7 +253,7 @@ function App() {
 
     setFieldErrors({})
     setCurrentStep('datos')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    scrollToTop()
   }
 
   // ── Validación paso 2: Datos de Contacto del Responsable ──
@@ -282,7 +304,7 @@ function App() {
     }
 
     setCurrentStep('pago')
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    scrollToTop()
   }
 
   // ── Registro del pedido (pendiente si hay acompañantes, pagado directo si son solo jugadores) ──
@@ -533,7 +555,7 @@ function App() {
 
       // Pasar a la pantalla de confirmación
       setCurrentStep('confirmacion')
-      window.scrollTo({ top: 0, behavior: 'smooth' })
+      scrollToTop()
 
     } catch (err) {
       console.error(err)
@@ -596,7 +618,7 @@ function App() {
 
         <div className="nav-actions">
           {currentStep === 'fiesta' && (
-            <button className="nav-cta" onClick={() => { setCurrentStep('entradas'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+            <button className="nav-cta" onClick={() => { setCurrentStep('entradas'); scrollToTop() }}>
               Comprar Entradas <ArrowRight size={15} />
             </button>
           )}
@@ -645,7 +667,7 @@ function App() {
                   className="btn-huge-red"
                   onClick={() => {
                     setCurrentStep('entradas')
-                    window.scrollTo({ top: 0, behavior: 'smooth' })
+                    scrollToTop()
                   }}
                 >
                   <Ticket size={22} />
@@ -663,7 +685,7 @@ function App() {
         {currentStep === 'entradas' && (
           <section className="step-section animate-fade">
             <div className="step-header">
-              <button className="btn-back" onClick={() => { setCurrentStep('fiesta'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+              <button className="btn-back" onClick={() => { setCurrentStep('fiesta'); scrollToTop() }}>
                 <ArrowLeft size={16} /> Volver
               </button>
               <div className="step-badge">PASO 1 DE 3 · SELECCIÓN DE ENTRADAS</div>
@@ -1020,7 +1042,7 @@ function App() {
               )}
 
               <div className="form-actions">
-                <button type="button" className="btn-secondary" onClick={() => { setCurrentStep('fiesta'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+                <button type="button" className="btn-secondary" onClick={() => { setCurrentStep('fiesta'); scrollToTop() }}>
                   <ArrowLeft size={16} /> Volver
                 </button>
                 <button
@@ -1044,7 +1066,7 @@ function App() {
         {(currentStep === 'datos' || currentStep === 'entradas_datos') && (
           <section className="step-section animate-fade">
             <div className="step-header">
-              <button className="btn-back" onClick={() => { setCurrentStep('entradas'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+              <button className="btn-back" onClick={() => { setCurrentStep('entradas'); scrollToTop() }}>
                 <ArrowLeft size={16} /> Modificar Entradas
               </button>
               <div className="step-badge">PASO 2 DE 3 · TUS DATOS</div>
@@ -1072,7 +1094,7 @@ function App() {
                 type="button"
                 className="btn-dash-outline"
                 style={{ padding: '6px 14px', fontSize: '12px', color: '#cbd5e1', borderColor: 'rgba(255, 255, 255, 0.2)' }}
-                onClick={() => { setCurrentStep('entradas'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+                onClick={() => { setCurrentStep('entradas'); scrollToTop() }}
               >
                 ✏️ Modificar cantidad
               </button>
@@ -1287,7 +1309,7 @@ function App() {
               )}
 
               <div className="form-actions">
-                <button type="button" className="btn-secondary" onClick={() => { setCurrentStep('entradas'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+                <button type="button" className="btn-secondary" onClick={() => { setCurrentStep('entradas'); scrollToTop() }}>
                   <ArrowLeft size={16} /> Volver a Entradas
                 </button>
                 <button type="submit" className="btn-huge-red">
@@ -1314,7 +1336,7 @@ function App() {
         {currentStep === 'pago' && (
           <section className="step-section animate-fade">
             <div className="step-header">
-              <button className="btn-back" onClick={() => { setCurrentStep('datos'); window.scrollTo({ top: 0, behavior: 'smooth' }) }}>
+              <button className="btn-back" onClick={() => { setCurrentStep('datos'); scrollToTop() }}>
                 <ArrowLeft size={16} /> Modificar datos o cantidad
               </button>
               <div className="step-badge">
@@ -1632,7 +1654,7 @@ function App() {
                   setCurrentStep('fiesta')
                   setOrderConfirmation(null)
                   setConfirmationQrUrls({})
-                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                  scrollToTop()
                 }}
               >
                 Volver al inicio
