@@ -115,7 +115,7 @@ export default function AdminPage({
 
   // Tabs del panel: 'scanner' | 'presencial' | 'sorteo' | 'padron' | 'tickets' | 'orders'
   const [activeTab, setActiveTab] = useState<'scanner' | 'presencial' | 'sorteo' | 'padron' | 'tickets' | 'orders'>('scanner')
-  const [unitPrice, setUnitPrice] = useState<number>(25000)
+  const [unitPrice, setUnitPrice] = useState<number>(17000)
 
   // Datos
   const [orders, setOrders] = useState<OrderRow[]>([])
@@ -1416,8 +1416,8 @@ export default function AdminPage({
           qrToken: t.qr_token,
           orderId: order.id,
           eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
-          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Estadio Salvador Bonanno · Andes Talleres',
+          date: 'Sábado 19 de Diciembre de 2026 (19/12) · 21:30 hs',
+          venue: 'Estadio Salvador Bonanno - Andes Talleres',
           isPlayer: isPl,
         }
       })
@@ -1538,8 +1538,8 @@ export default function AdminPage({
           qrToken: t.qr_token,
           orderId: order.id,
           eventName: 'Cena de Fin de Año 2026 - Andes Talleres',
-          date: 'Sábado 19 de Diciembre de 2026 · 21:30 hs',
-          venue: 'Estadio Salvador Bonanno · Andes Talleres',
+          date: 'Sábado 19 de Diciembre de 2026 (19/12) · 21:30 hs',
+          venue: 'Estadio Salvador Bonanno - Andes Talleres',
           isPlayer: isPl,
         }
       })
@@ -3375,7 +3375,7 @@ export default function AdminPage({
             <div className="padron-print-header">
               <div>
                 <h1>ANDES TALLERES SPORT CLUB</h1>
-                <p><b>CENA DE FIN DE AÑO 2026</b> · ESTADIO SALVADOR BONANNO - ANDES TALLERES</p>
+                <p><b>CENA DE FIN DE AÑO 2026</b> · ESTADIO SALVADOR BONANNO - ANDES TALLERES (19/12)</p>
                 <p style={{ fontSize: '9pt', color: '#666' }}>Planilla Oficial de Conteo y Padrón de Asistentes clasificado por Categoría</p>
               </div>
               <div style={{ textAlign: 'right', fontSize: '9pt', color: '#555' }}>

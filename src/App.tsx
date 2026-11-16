@@ -21,7 +21,7 @@ import {
 } from './types'
 
 // Precio base de referencia por entrada en ARS (si Supabase no define otro)
-const DEFAULT_PRICE_ARS = 25000
+const DEFAULT_PRICE_ARS = 17000
 
 // Datos bancarios y de contacto oficiales
 const CLUB_ALIAS = (import.meta.env.VITE_CLUB_ALIAS as string) || 'futsal.atsc'
@@ -32,8 +32,8 @@ const WHATSAPP_PHONE = (import.meta.env.VITE_WHATSAPP_PHONE as string) || '54926
 
 // Datos oficiales del evento
 const EVENT_NAME = 'Cena de Fin de Año 2026 - Andes Talleres'
-const EVENT_DATE = 'Sábado 19 de Diciembre de 2026 · 21:30 hs'
-const EVENT_VENUE = 'Estadio Salvador Bonanno · Andes Talleres'
+const EVENT_DATE = 'Sábado 19 de Diciembre de 2026 (19/12) · 21:30 hs'
+const EVENT_VENUE = 'Estadio Salvador Bonanno - Andes Talleres'
 
 const money = (amount: number) =>
   new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(amount)
@@ -568,7 +568,7 @@ function App() {
   // Generar URL de WhatsApp con mensaje prearmado
   const getWhatsAppUrl = () => {
     if (!orderConfirmation) return '#'
-    const msg = `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres (19 de Diciembre - Estadio Salvador Bonanno).\n\n*Pedido:* #${orderConfirmation.orderId}\n*Titular:* ${orderConfirmation.buyer.fullName}\n*DNI:* ${orderConfirmation.buyer.dni}\n*Categoría:* ${primaryCategory}\n*Entradas:* ${orderConfirmation.quantity}\n*Total:* ${money(orderConfirmation.totalArs)}\n*Email:* ${orderConfirmation.buyer.email}`
+    const msg = `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres (Sábado 19/12 en Estadio Salvador Bonanno - Andes Talleres).\n\n*Pedido:* #${orderConfirmation.orderId}\n*Titular:* ${orderConfirmation.buyer.fullName}\n*DNI:* ${orderConfirmation.buyer.dni}\n*Categoría:* ${primaryCategory}\n*Entradas:* ${orderConfirmation.quantity}\n*Total:* ${money(orderConfirmation.totalArs)}\n*Email:* ${orderConfirmation.buyer.email}`
     return `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(msg)}`
   }
 
@@ -648,12 +648,12 @@ function App() {
               <div className="fiesta-quick-info">
                 <div className="info-item">
                   <Calendar size={18} />
-                  <span>Sábado 19 de Diciembre · 21:30 hs</span>
+                  <span>Sábado 19 de Diciembre (19/12) · 21:30 hs</span>
                 </div>
                 <div className="info-divider" />
                 <div className="info-item">
                   <MapPin size={18} />
-                  <span>Estadio Salvador Bonanno · Andes Talleres</span>
+                  <span>Estadio Salvador Bonanno - Andes Talleres</span>
                 </div>
                 <div className="info-divider" />
                 <div className="info-item">
@@ -1630,7 +1630,7 @@ function App() {
                       <span className="conf-club-tag">ATSC 2026</span>
                     </div>
                     <div className="conf-ticket-name">{t.attendeeName}</div>
-                    <small className="conf-ticket-event">Cena de Fin de Año 2026 · Estadio Salvador Bonanno</small>
+                    <small className="conf-ticket-event">Cena de Fin de Año 2026 · Estadio Salvador Bonanno - Andes Talleres (19/12)</small>
 
                     {confirmationQrUrls[t.qrToken] && (
                       <div className="conf-qr-display">
