@@ -21,7 +21,7 @@ import {
 } from './types'
 
 // Precio base de referencia por entrada en ARS (si Supabase no define otro)
-const DEFAULT_PRICE_ARS = 17000
+const DEFAULT_PRICE_ARS = 12000
 
 // Datos bancarios y de contacto oficiales
 const CLUB_ALIAS = (import.meta.env.VITE_CLUB_ALIAS as string) || 'futsal.atsc'

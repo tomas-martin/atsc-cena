@@ -115,7 +115,7 @@ export default function AdminPage({
 
   // Tabs del panel: 'scanner' | 'presencial' | 'sorteo' | 'padron' | 'tickets' | 'orders'
   const [activeTab, setActiveTab] = useState<'scanner' | 'presencial' | 'sorteo' | 'padron' | 'tickets' | 'orders'>('scanner')
-  const [unitPrice, setUnitPrice] = useState<number>(17000)
+  const [unitPrice, setUnitPrice] = useState<number>(12000)
 
   // Datos
   const [orders, setOrders] = useState<OrderRow[]>([])
