@@ -32,7 +32,7 @@ const WHATSAPP_PHONE = (import.meta.env.VITE_WHATSAPP_PHONE as string) || '54926
 
 // Datos oficiales del evento
 const EVENT_NAME = 'Cena de Fin de Año 2026 - Andes Talleres'
-const EVENT_DATE = 'Sábado 19 de Diciembre de 2026 (19/12) · 21:30 hs'
+const EVENT_DATE = 'Viernes 18 de Diciembre de 2026 (18/12) · 21:00 hs'
 const EVENT_VENUE = 'Estadio Salvador Bonanno - Andes Talleres'
 
 const money = (amount: number) =>
@@ -568,7 +568,7 @@ function App() {
   // Generar URL de WhatsApp con mensaje prearmado
   const getWhatsAppUrl = () => {
     if (!orderConfirmation) return '#'
-    const msg = `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres (Sábado 19/12 en Estadio Salvador Bonanno - Andes Talleres).\n\n*Pedido:* #${orderConfirmation.orderId}\n*Titular:* ${orderConfirmation.buyer.fullName}\n*DNI:* ${orderConfirmation.buyer.dni}\n*Categoría:* ${primaryCategory}\n*Entradas:* ${orderConfirmation.quantity}\n*Total:* ${money(orderConfirmation.totalArs)}\n*Email:* ${orderConfirmation.buyer.email}`
+    const msg = `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres (Viernes 18/12 en Estadio Salvador Bonanno - Andes Talleres).\n\n*Pedido:* #${orderConfirmation.orderId}\n*Titular:* ${orderConfirmation.buyer.fullName}\n*DNI:* ${orderConfirmation.buyer.dni}\n*Categoría:* ${primaryCategory}\n*Entradas:* ${orderConfirmation.quantity}\n*Total:* ${money(orderConfirmation.totalArs)}\n*Email:* ${orderConfirmation.buyer.email}`
     return `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(msg)}`
   }
 
@@ -648,7 +648,7 @@ function App() {
               <div className="fiesta-quick-info">
                 <div className="info-item">
                   <Calendar size={18} />
-                  <span>Sábado 19 de Diciembre (19/12) · 21:30 hs</span>
+                  <span>Viernes 18 de Diciembre (18/12) · 21:00 hs</span>
                 </div>
                 <div className="info-divider" />
                 <div className="info-item">
@@ -1630,7 +1630,7 @@ function App() {
                       <span className="conf-club-tag">ATSC 2026</span>
                     </div>
                     <div className="conf-ticket-name">{t.attendeeName}</div>
-                    <small className="conf-ticket-event">Cena de Fin de Año 2026 · Estadio Salvador Bonanno - Andes Talleres (19/12)</small>
+                    <small className="conf-ticket-event">Cena de Fin de Año 2026 · Estadio Salvador Bonanno - Andes Talleres (18/12)</small>
 
                     {confirmationQrUrls[t.qrToken] && (
                       <div className="conf-qr-display">

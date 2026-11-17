@@ -81,11 +81,11 @@ export async function sendTicketsEmail(
         <div style="max-width: 600px; margin: 0 auto; background: #0b1726; border: 1px solid #1a2d47; border-radius: 12px; padding: 30px;">
           <div style="text-align: center; margin-bottom: 25px;">
             <h1 style="color: #d92736; margin: 0; font-size: 24px; letter-spacing: 1px; font-weight: 800;">ANDES TALLERES SPORT CLUB</h1>
-            <p style="color: #8a9ab5; margin: 6px 0 0; font-size: 13px;">Cena de Fin de Año 2026 · Estadio Salvador Bonanno - Andes Talleres (19/12)</p>
+            <p style="color: #8a9ab5; margin: 6px 0 0; font-size: 13px;">Cena de Fin de Año 2026 · Estadio Salvador Bonanno - Andes Talleres (18/12)</p>
           </div>
           <h2 style="color: #ffffff; font-size: 19px; border-bottom: 1px solid #1a2d47; padding-bottom: 12px; margin-top: 0;">¡Hola, ${confirmation.buyer.fullName}!</h2>
           <p style="color: #c2cad7; line-height: 1.6; font-size: 14px;">
-            Confirmamos tu compra de <b>${confirmation.quantity} entrada(s)</b> para la Gran Cena de Fin de Año de Andes Talleres el <b>Sábado 19 de Diciembre (19/12 · 21:30 hs)</b> en el <b>Estadio Salvador Bonanno - Andes Talleres</b>.
+            Confirmamos tu compra de <b>${confirmation.quantity} entrada(s)</b> para la Gran Cena de Fin de Año de Andes Talleres el <b>Viernes 18 de Diciembre (18/12 · 21:00 hs)</b> en el <b>Estadio Salvador Bonanno - Andes Talleres</b>.
             Presentá los siguientes códigos QR en el ingreso del evento desde tu teléfono celular o impresos.
           </p>
           ${ticketsHtml}
