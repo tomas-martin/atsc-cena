@@ -568,7 +568,36 @@ function App() {
   // Generar URL de WhatsApp con mensaje prearmado
   const getWhatsAppUrl = () => {
     if (!orderConfirmation) return '#'
-    const msg = `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres (Viernes 18/12 en Estadio Salvador Bonanno - Andes Talleres).\n\n*Pedido:* #${orderConfirmation.orderId}\n*Titular:* ${orderConfirmation.buyer.fullName}\n*DNI:* ${orderConfirmation.buyer.dni}\n*Categoría:* ${primaryCategory}\n*Entradas:* ${orderConfirmation.quantity}\n*Total:* ${money(orderConfirmation.totalArs)}\n*Email:* ${orderConfirmation.buyer.email}`
+
+    const roleLabel = (role?: string) => {
+      if (role === 'jugador') return '⚽ Jugador'
+      if (role === 'menor') return '👶 Menor (gratis)'
+      return '🎟️ Acompañante'
+    }
+
+    // Detallar cada entrada con tipo y nombre
+    const ticketLines = orderConfirmation.tickets
+      .map((t, i) => {
+        const role = t.role || (t.isPlayer ? 'jugador' : 'acompanante')
+        return `  ${i + 1}. ${roleLabel(role)}: ${t.attendeeName}`
+      })
+      .join('\n')
+
+    const msg = [
+      `¡Hola! Te envío el comprobante de transferencia para la Cena de Fin de Año de Andes Talleres (Viernes 18/12 en Estadio Salvador Bonanno - Andes Talleres).`,
+      ``,
+      `*Pedido:* #${orderConfirmation.orderId}`,
+      `*Titular:* ${orderConfirmation.buyer.fullName}`,
+      `*DNI:* ${orderConfirmation.buyer.dni}`,
+      `*Categoría:* ${primaryCategory}`,
+      `*Total:* ${money(orderConfirmation.totalArs)}`,
+      ``,
+      `*Entradas (${orderConfirmation.quantity}):*`,
+      ticketLines,
+      ``,
+      `*Email:* ${orderConfirmation.buyer.email}`,
+    ].join('\n')
+
     return `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(msg)}`
   }
 
